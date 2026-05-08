@@ -60,6 +60,7 @@ if(BUILD_CLIENT)
         src/main.cpp
         src/render/Renderer.cpp
         src/net/NetClient.cpp
+        src/platform/AutoUpdate.cpp
         ${SHARED_SRC}
     )
     add_executable(slimyjourney ${CLIENT_SRC})
@@ -107,7 +108,7 @@ endif()
 
 if(WIN32)
     if(BUILD_CLIENT)
-        target_link_libraries(slimyjourney PRIVATE winmm ws2_32 winhttp)
+        target_link_libraries(slimyjourney PRIVATE winmm ws2_32 winhttp shell32)
         target_link_libraries(slimyjourney_mapedit PRIVATE winmm ws2_32)
         target_compile_definitions(slimyjourney PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
         target_compile_definitions(slimyjourney_mapedit PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)

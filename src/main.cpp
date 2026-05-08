@@ -5,12 +5,15 @@
 #include "game/Slime.h"
 #include "net/NetClient.h"
 #include "net/Protocol.h"
+#include "platform/AutoUpdate.h"
 #include <raylib.h>
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <thread>
 #include <vector>
 
 using namespace pe;
@@ -20,6 +23,9 @@ namespace {
 constexpr float kChatBubbleFadeSec = 0.35f;
 /** Default hub address shown in Online → SERVER IP (GCP or replace for your host). */
 constexpr const char* kDefaultJoinHost = "35.232.34.254";
+
+/// Windows: téléchargement MAJ client en cours (affiche un libellé lobby / HUD).
+std::atomic<bool> g_clientAutoUpdateBusy{false};
 
 inline float speechBubbleAlpha(float remainingSec) {
     if (remainingSec <= 0.f) return 0.f;
@@ -246,7 +252,7 @@ struct LobbyUIState {
 };
 
 void drawLobbyBrowser(net::Client& client, LobbyUIState& ui, bool& wantQuit,
-                      const std::string& serverAddr) {
+                      const std::string& serverAddr, bool updateDownloading) {
     const int W = GetScreenWidth();
     const int H = GetScreenHeight();
 
@@ -364,7 +370,9 @@ void drawLobbyBrowser(net::Client& client, LobbyUIState& ui, bool& wantQuit,
     if (fb != net::JoinFeedback::None && fb != net::JoinFeedback::Ok) {
         const char* msg = joinFeedbackText(fb);
         DrawText(msg, colX, inputY - 28, 14, warn);
-    } else if (client.hasUpdateNotice()) {
+    } else if (updateDownloading) {
+        DrawText("Telechargement de la mise a jour...", colX, inputY - 28, 14, accent);
+    } else if (client.needsClientUpgrade()) {
         char tail[128];
         std::snprintf(tail, sizeof(tail), "maj dispo  build %u  %s",
                       (unsigned)client.updateNoticeBuild(),
@@ -417,6 +425,16 @@ bool runOnlineSession(const std::string& host, uint16_t port, std::string& errOu
     bool quitToMenu = false;
     while (!renderer.shouldClose() && !quitToMenu) {
         client.serviceIncoming();
+#if defined(_WIN32)
+        if (client.isConnected() && client.needsClientUpgrade() &&
+            !g_clientAutoUpdateBusy.exchange(true)) {
+            std::string url = client.updateNoticeUrl();
+            std::thread([url]() {
+                pe::platform::downloadAndRestartFromUrl(url);
+                g_clientAutoUpdateBusy = false;
+            }).detach();
+        }
+#endif
         if (!client.isConnected()) break;
 
         const float frameTime = std::min(GetFrameTime(), 0.05f);
@@ -427,7 +445,8 @@ bool runOnlineSession(const std::string& host, uint16_t port, std::string& errOu
             BeginDrawing();
             ClearBackground(::Color{ 8, 12, 18, 255 });
             bool wantQuit = false;
-            drawLobbyBrowser(client, lobbyUi, wantQuit, serverAddr);
+            drawLobbyBrowser(client, lobbyUi, wantQuit, serverAddr,
+                               g_clientAutoUpdateBusy.load());
             if (state == net::ClientState::Joining) {
                 const int W = GetScreenWidth();
                 DrawRectangle(W / 2 - 90, 14, 180, 22, ::Color{ 30, 50, 70, 230 });
@@ -571,7 +590,9 @@ bool runOnlineSession(const std::string& host, uint16_t port, std::string& errOu
             if (dir.len() < 0.08f) continue;
             renderer.drawAimIndicator(rs.centroid, dir, rs.chargeFrac);
         }
-        if (client.hasUpdateNotice()) {
+        if (g_clientAutoUpdateBusy.load()) {
+            renderer.drawHUDBanner("Telechargement de la mise a jour...");
+        } else if (client.needsClientUpgrade()) {
             char banner[160];
             std::snprintf(banner, sizeof(banner),
                           "UPDATE DISPONIBLE  build %u  %s",

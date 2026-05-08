@@ -105,6 +105,10 @@ public:
     bool hasUpdateNotice() const { return updateNoticeBuild_ != 0; }
     uint32_t updateNoticeBuild() const { return updateNoticeBuild_; }
     const std::string& updateNoticeUrl() const { return updateNoticeUrl_; }
+    /// True when the hub announced a strictly newer build and a non-empty download URL (Windows auto-update).
+    bool needsClientUpgrade() const {
+        return updateNoticeBuild_ > kClientBuild && !updateNoticeUrl_.empty();
+    }
 
 private:
     using clock = std::chrono::steady_clock;
