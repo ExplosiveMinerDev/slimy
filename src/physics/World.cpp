@@ -681,6 +681,16 @@ bool World::splitLargestBlobWithTag(int tag, Vec2 axisDir) {
 }
 
 void World::tryBinarySplitDamagedBlob(int tag) {
+    int tagCount = 0;
+    for (const auto& sb : softBodies_) {
+        if (sb->tag == tag) ++tagCount;
+    }
+    // Split only while exactly one blob carries this player tag. Otherwise each
+    // physics step can split again and fragment count grows without bound (server
+    // lag after tens of seconds). After damage-split into two pieces, merge must
+    // recombine before another split can occur.
+    if (tagCount != 1) return;
+
     for (size_t i = 0; i < softBodies_.size(); ++i) {
         SoftBody& sb = *softBodies_[i];
         if (sb.tag != tag) continue;
