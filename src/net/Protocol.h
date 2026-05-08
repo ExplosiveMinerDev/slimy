@@ -7,7 +7,7 @@ namespace pe::net {
 
 constexpr uint32_t kProtocolVersion = 10;
 /// Bump when shipping a new Windows client binary (must match server `--build` / manifest for auto-update).
-constexpr uint32_t kClientBuild = 11;
+constexpr uint32_t kClientBuild = 12;
 /// Max UTF-8 bytes per chat line (wire + UI clipping).
 constexpr int kMaxChatPayloadBytes = 96;
 /// Max UTF-8 bytes for a user-supplied room name.

@@ -13,7 +13,8 @@
 //
 // Manifest format (one entry per line, optional):
 //   build=11
-//   url=https://example.com/release
+//   url=https://example.com/update.manifest   (client : manifest texte multi-fichiers ou exe direct)
+//   url=https://example.com/slimyjourney.exe    (lien exe PE unique, compat ancienne version client)
 
 #include "net/NetServer.h"
 #include "net/Protocol.h"
