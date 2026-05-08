@@ -92,7 +92,7 @@ int runSinglePlayer() {
             else { returnToMenu = true; break; }
         }
 
-        if (IsKeyPressed(KEY_T)) chatOpen = !chatOpen;
+        if (!chatOpen && IsKeyPressed(KEY_T)) chatOpen = true;
 
         if (chatOpen) {
             int cp = GetCharPressed();
@@ -141,14 +141,11 @@ int runSinglePlayer() {
             enterMergeLatch = false;
         }
 
-        if (IsKeyPressed(KEY_R)) {
+        if (!chatOpen && IsKeyPressed(KEY_R)) {
             resetScene(world, slime);
             enterHold = 0.f;
             enterMergeLatch = false;
         }
-        if (IsKeyPressed(KEY_F)) renderer.showDebug = !renderer.showDebug;
-        if (IsKeyPressed(KEY_B)) renderer.drawAABBs = !renderer.drawAABBs;
-        if (IsKeyPressed(KEY_N)) renderer.drawSprings = !renderer.drawSprings;
 
         float wheel = GetMouseWheelMove();
         if (wheel != 0.f) {
@@ -209,9 +206,6 @@ int runSinglePlayer() {
                                            speechBubbleAlpha(soloBubbleRemain));
         }
         if (chatOpen) renderer.drawChatTypingBar(chatDraft.c_str());
-        renderer.drawDebugOverlay(
-            world, frameTime,
-            "Solo  R reset  F debug  B AABB  N springs  RMB pan  T chat  Enter merge  E grab  Esc menu/back");
         renderer.endFrame();
     }
     return 0;
@@ -455,7 +449,8 @@ bool runOnlineSession(const std::string& host, uint16_t port, std::string& errOu
             }
         }
 
-        if (IsKeyPressed(KEY_T)) chatOpen = !chatOpen;
+        // T opens chat only when closed — typing "t" must not toggle the panel off.
+        if (!chatOpen && IsKeyPressed(KEY_T)) chatOpen = true;
 
         if (chatOpen) {
             int cp = GetCharPressed();
@@ -483,11 +478,7 @@ bool runOnlineSession(const std::string& host, uint16_t port, std::string& errOu
         const bool mergeHeld =
             (IsKeyDown(KEY_ENTER) || IsKeyDown(KEY_KP_ENTER)) && !chatTyping;
         const bool grabHeld = IsKeyDown(KEY_E) && !chatTyping;
-        const bool respawnHeld = IsKeyDown(KEY_R);
-
-        if (IsKeyPressed(KEY_F)) renderer.showDebug = !renderer.showDebug;
-        if (IsKeyPressed(KEY_B)) renderer.drawAABBs = !renderer.drawAABBs;
-        if (IsKeyPressed(KEY_N)) renderer.drawSprings = !renderer.drawSprings;
+        const bool respawnHeld = IsKeyDown(KEY_R) && !chatTyping;
 
         float wheel = GetMouseWheelMove();
         if (wheel != 0.f) {
@@ -564,13 +555,6 @@ bool runOnlineSession(const std::string& host, uint16_t port, std::string& errOu
             if (dir.len() < 0.08f) continue;
             renderer.drawAimIndicator(rs.centroid, dir, rs.chargeFrac);
         }
-        char dbgL4[128];
-        std::snprintf(dbgL4, sizeof(dbgL4), "snap #%u   slimes %zu",
-                      (unsigned)client.lastSnapshotFrame(), client.displaySlimes().size());
-        renderer.drawDebugOverlay(
-            viewWorld, frameTime,
-            "Online  R respawn  F debug  B AABB  N springs  RMB pan  T chat  Enter merge  E grab  Esc retour lobby",
-            dbgL4);
         if (client.hasUpdateNotice()) {
             char banner[160];
             std::snprintf(banner, sizeof(banner),

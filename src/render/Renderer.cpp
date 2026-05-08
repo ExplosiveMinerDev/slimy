@@ -413,16 +413,6 @@ void Renderer::drawSoftBody(const SoftBody& sb) {
     // (Eyes are drawn separately via drawSlimeFace — they have their own
     //  spring-damped motion driven by Slime, not by raw mesh anchors.)
     (void)vel;
-
-    if (drawSprings) {
-        for (auto& sp : sb.springs) {
-            if (sp.broken) continue;
-            Vec2 a = worldToScreen(sb.points[(size_t)sp.a].pos);
-            Vec2 b2 = worldToScreen(sb.points[(size_t)sp.b].pos);
-            DrawLine(iround(a.x), iround(a.y), iround(b2.x), iround(b2.y),
-                     ::Color{200, 72, 92, 120});
-        }
-    }
 }
 
 void Renderer::drawSlimePuddles(const std::vector<SlimePuddle>& puddles) {
@@ -440,28 +430,17 @@ void Renderer::drawSlimePuddles(const std::vector<SlimePuddle>& puddles) {
 }
 
 void Renderer::drawWorld(const World& world, const std::vector<SlimePuddle>* slimeTrail) {
-    auto drawBodyAndAabb = [&](Body& b) {
-        drawBody(b, 0, 0);
-        if (!drawAABBs) return;
-        AABB box = b.aabb();
-        Vec2 mn = worldToScreen(box.min);
-        Vec2 mx = worldToScreen(box.max);
-        int x = iround(mn.x);
-        int y = iround(mn.y);
-        int w = iround(mx.x) - x;
-        int h = iround(mx.y) - y;
-        DrawRectangleLines(x, y, w, h, ::Color{120, 200, 255, 200});
-    };
+    auto drawOne = [&](Body& b) { drawBody(b, 0, 0); };
 
     for (auto& b : world.bodies()) {
         if (b->type == BodyType::Dynamic && b->grabOwnerTag != 0) continue;
-        drawBodyAndAabb(*b);
+        drawOne(*b);
     }
     if (slimeTrail && !slimeTrail->empty()) drawSlimePuddles(*slimeTrail);
     for (auto& sb : world.softBodies()) drawSoftBody(*sb);
     for (auto& b : world.bodies()) {
         if (b->type != BodyType::Dynamic || b->grabOwnerTag == 0) continue;
-        drawBodyAndAabb(*b);
+        drawOne(*b);
     }
 }
 
@@ -641,47 +620,6 @@ void Renderer::drawHUDBanner(const std::string& text) {
     const int y = 4;
     DrawRectangle(x - 4, y - 2, tw + 8, fs + 4, ::Color{0, 0, 0, 170});
     DrawText(text.c_str(), x, y, fs, ::Color{160, 235, 175, 255});
-}
-
-void Renderer::drawDebugOverlay(const World& world, float dt,
-                                const char* footerOverride,
-                                const char* line4Override) {
-    if (!showDebug) return;
-
-    const int pad = 8;
-    const int fs = 10;
-    char l1[96], l2[96], l3[96], l4[96];
-    std::snprintf(l1, sizeof(l1), "%i FPS   %.1f ms", GetFPS(), (double)(dt * 1000.f));
-    std::snprintf(l2, sizeof(l2), "%zu bodies   %zu soft", world.bodies().size(), world.softBodies().size());
-    std::snprintf(l3, sizeof(l3), "B AABB %s   N springs %s",
-                  drawAABBs ? "on" : "off", drawSprings ? "on" : "off");
-    if (line4Override)
-        std::snprintf(l4, sizeof(l4), "%s", line4Override);
-    else
-        std::snprintf(l4, sizeof(l4), "player fragments %i", Slime::playerBlobCount(world));
-
-    int tw = MeasureText(l1, fs);
-    tw = std::max(tw, MeasureText(l2, fs));
-    tw = std::max(tw, MeasureText(l3, fs));
-    tw = std::max(tw, MeasureText(l4, fs));
-    int boxW = tw + pad * 3;
-    int boxH = fs * 4 + 10 + pad * 2;
-
-    DrawRectangle(pad, pad, boxW, boxH, ::Color{8, 8, 14, 200});
-    DrawRectangleLines(pad, pad, boxW, boxH, ::Color{72, 68, 96, 255});
-
-    int y = pad + 4;
-    DrawText(l1, pad * 2, y, fs, ::Color{216, 210, 232, 255});
-    y += fs + 2;
-    DrawText(l2, pad * 2, y, fs, ::Color{216, 210, 232, 255});
-    y += fs + 2;
-    DrawText(l3, pad * 2, y, fs, ::Color{216, 210, 232, 255});
-    y += fs + 2;
-    DrawText(l4, pad * 2, y, fs, ::Color{216, 210, 232, 255});
-
-    const char* help = footerOverride ? footerOverride
-        : "Mouse aim  Hold LMB / Space charge  release jump  Enter merge  E hold grab release throw  R reset";
-    DrawText(help, pad * 2, internalH_ - fs - pad * 2, fs, ::Color{140, 134, 168, 255});
 }
 
 } // namespace pe

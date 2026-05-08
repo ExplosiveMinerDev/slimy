@@ -46,9 +46,6 @@ public:
     /// Draws a remote slime body (perimeter polygon) from raw world-space points.
     /// Used by the client to render slimes received from the server.
     void drawRemoteSlimeBody(const std::vector<Vec2>& worldPoints, bool isLocalPlayer);
-    void drawDebugOverlay(const World& world, float dt,
-                          const char* footerOverride = nullptr,
-                          const char* line4Override = nullptr);
     /// Persistent top banner inside the pixel canvas (e.g. "HOSTING ...").
     /// Drawn between beginFrame()/endFrame() so it's pixel-perfect and scales.
     void drawHUDBanner(const std::string& text);
@@ -60,10 +57,6 @@ public:
     Vec2 worldToScreen(const Vec2& world) const;
 
     Camera2D camera;
-
-    bool showDebug = false;
-    bool drawAABBs = false;
-    bool drawSprings = false;
 
     int internalWidth() const { return internalW_; }
     int internalHeight() const { return internalH_; }
