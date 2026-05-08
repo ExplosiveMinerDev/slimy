@@ -1,0 +1,2 @@
+build=14
+url=https://example.com/path/slimyjourney.exe
