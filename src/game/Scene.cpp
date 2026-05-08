@@ -4,6 +4,7 @@
 #include "physics/Body.h"
 #include "physics/World.h"
 
+#include <cmath>
 #include <cstdio>
 #include <fstream>
 #include <string>
@@ -26,6 +27,31 @@ constexpr Vec2 kSpawnPoints[net::kMaxPlayers] = {
     {  0.f,  8.7f},
 };
 
+/// True if a static AABB box already exists (same centre / half extents / tag) — avoids
+/// duplicate solids when maps/default.sjmap repeats geometry already in buildSceneCore
+/// (phantom platforms: drawn twice or client/server mismatch vs cwd).
+bool nearlySameBoxStatic(const World& world, const SolidMapEntry& e) {
+    constexpr float epsC = 0.06f;
+    constexpr float epsH = 0.04f;
+    for (const auto& bp : world.bodies()) {
+        const Body& b = *bp;
+        if (b.type != BodyType::Static) continue;
+        if (b.shape.type != ShapeType::Polygon) continue;
+        if (b.shape.vertices.size() != 4) continue;
+        if (std::abs(b.rot) > 1e-3f) continue;
+        AABB box = b.aabb();
+        const float cx = (box.min.x + box.max.x) * 0.5f;
+        const float cy = (box.min.y + box.max.y) * 0.5f;
+        const float hx = (box.max.x - box.min.x) * 0.5f;
+        const float hy = (box.max.y - box.min.y) * 0.5f;
+        if (std::abs(cx - e.pos.x) > epsC || std::abs(cy - e.pos.y) > epsC) continue;
+        if (std::abs(hx - e.halfW) > epsH || std::abs(hy - e.halfH) > epsH) continue;
+        if (b.tag != e.tag) continue;
+        return true;
+    }
+    return false;
+}
+
 void tryAppendDefaultSolidMap(World& world) {
     const char* path = "maps/default.sjmap";
     std::ifstream probe(path);
@@ -38,7 +64,14 @@ void tryAppendDefaultSolidMap(World& world) {
         std::fprintf(stderr, "[map] %s: %s\n", path, err.c_str());
         return;
     }
-    appendSolidMapEntries(world, entries);
+    std::vector<SolidMapEntry> filtered;
+    filtered.reserve(entries.size());
+    for (const auto& e : entries) {
+        if (nearlySameBoxStatic(world, e)) continue;
+        filtered.push_back(e);
+    }
+    if (filtered.empty()) return;
+    appendSolidMapEntries(world, filtered);
 }
 
 } // namespace
