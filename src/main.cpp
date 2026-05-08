@@ -18,6 +18,8 @@ using namespace pe;
 namespace {
 
 constexpr float kChatBubbleFadeSec = 0.35f;
+/** Default hub address shown in Online → SERVER IP (GCP or replace for your host). */
+constexpr const char* kDefaultJoinHost = "35.232.34.254";
 
 inline float speechBubbleAlpha(float remainingSec) {
     if (remainingSec <= 0.f) return 0.f;
@@ -591,7 +593,7 @@ bool runOnlineSession(const std::string& host, uint16_t port, std::string& errOu
 struct MenuResult {
     enum Mode { Quit, Solo, Online };
     Mode mode = Quit;
-    std::string ip = "127.0.0.1";
+    std::string ip = kDefaultJoinHost;
     uint16_t port = net::kDefaultPort;
 };
 
@@ -607,7 +609,7 @@ MenuResult runMenu(std::string& joinFailHint) {
     const std::string errBanner = joinFailHint;
     joinFailHint.clear();
     bool joinPanel = !errBanner.empty();
-    static std::string s_joinIpDraft = "127.0.0.1";
+    static std::string s_joinIpDraft = kDefaultJoinHost;
     std::string ipBuf = s_joinIpDraft;
     bool decided = false;
 
