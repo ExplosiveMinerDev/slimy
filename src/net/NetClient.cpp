@@ -283,7 +283,8 @@ void Client::sendInput(Vec2 aimWorld, bool jumpHeld, bool mergeHeld, bool grabHe
     m.mergeHeld = (uint8_t)(mergeHeld ? 1 : 0);
     m.grabHeld = (uint8_t)(grabHeld ? 1 : 0);
     m.respawnHeld = (uint8_t)(respawnHeld ? 1 : 0);
-    ENetPacket* pk = enet_packet_create(&m, sizeof(m), ENET_PACKET_FLAG_RELIABLE);
+    // Unreliable @ ~60 Hz — reliable input queued behind ACKs and felt like huge "ping".
+    ENetPacket* pk = enet_packet_create(&m, sizeof(m), 0);
     enet_peer_send(peer_, 0, pk);
 }
 

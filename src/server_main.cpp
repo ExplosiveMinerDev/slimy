@@ -165,7 +165,7 @@ int main(int argc, char** argv) {
         if (server.totalConnected() == 0)
             std::this_thread::sleep_for(std::chrono::milliseconds(20));
         else
-            std::this_thread::yield();
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 
     std::printf("[server] shutting down\n");

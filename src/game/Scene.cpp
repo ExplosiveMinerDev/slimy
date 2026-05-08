@@ -92,6 +92,12 @@ void buildSceneCore(World& world) {
     addStatic(Shape::box(2.6f, 0.30f), {  0.f, 4.5f}, Slime::platformTag);
     addStatic(Shape::box(2.6f, 0.30f), { 18.f, 6.6f}, Slime::platformTag);
 
+    // === Platforms mirrored from maps/default.sjmap — inlined so client/server match even when
+    //     maps/default.sjmap is missing next to the Windows exe (GCP cwd loads the file). ===
+    addStatic(Shape::box(3.f, 0.25f), {-10.f, 5.5f}, Slime::platformTag);
+    addStatic(Shape::box(3.f, 0.25f), { 10.f, 5.5f}, Slime::platformTag);
+    addStatic(Shape::box(5.f, 0.2f), { 0.f, 3.f}, Slime::platformTag);
+
     // === Spike strip on the right side of the main ground ===
     for (float x = 22.f; x <= 28.f; x += 0.7f)
         addStatic(spikeTri(), {x, 9.78f}, Slime::spikeHazardTag, 0.4f);
