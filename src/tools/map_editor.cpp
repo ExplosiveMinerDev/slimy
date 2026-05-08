@@ -50,18 +50,21 @@ Vec2 snapv(Vec2 p, float g) { return {snapf(p.x, g), snapf(p.y, g)}; }
 Color colorForTag(int tag) {
     if (tag == pe::Slime::grassTag) return {50, 120, 80, 200};
     if (tag == pe::Slime::stoneTag) return {70, 90, 100, 200};
+    if (tag == pe::Slime::mapTestRockTag) return {180, 70, 60, 200};
     return {90, 140, 100, 200};
 }
 
 const char* labelForTag(int tag) {
     if (tag == pe::Slime::grassTag) return "grass";
     if (tag == pe::Slime::stoneTag) return "stone";
+    if (tag == pe::Slime::mapTestRockTag) return "redrock";
     return "platform";
 }
 
 void cycleTag(int& tag) {
     if (tag == pe::Slime::grassTag) tag = pe::Slime::stoneTag;
     else if (tag == pe::Slime::stoneTag) tag = pe::Slime::platformTag;
+    else if (tag == pe::Slime::platformTag) tag = pe::Slime::mapTestRockTag;
     else tag = pe::Slime::grassTag;
 }
 

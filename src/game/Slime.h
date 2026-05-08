@@ -34,6 +34,8 @@ public:
     static constexpr int platformTag = 5;
     static constexpr int crateTag = 6;
     static constexpr int ballTag = 7;
+    /// Solides décor / tests carte (ex. caillou rouge dans default.sjmap).
+    static constexpr int mapTestRockTag = 8;
 
     /// Launch velocity magnitudes (world units / s) — applied along the aim direction.
     /// (Tuned at ~80% of the original feel — momentum reduced by 20%.)

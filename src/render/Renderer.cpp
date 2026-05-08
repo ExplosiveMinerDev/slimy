@@ -239,6 +239,11 @@ BodyStyle styleForBody(const Body& b) {
         s.accent = {244, 248, 255, 255};
         s.deep = {88, 92, 108, 255};
         s.isCircleMetal = true;
+    } else if (b.tag == Slime::mapTestRockTag) {
+        s.fill = {188, 72, 62, 255};
+        s.outline = {92, 28, 24, 255};
+        s.accent = {236, 152, 132, 255};
+        s.deep = {118, 42, 38, 255};
     } else if (b.type == BodyType::Static) {
         s.fill = {84, 88, 108, 255};
         s.outline = {30, 32, 44, 255};

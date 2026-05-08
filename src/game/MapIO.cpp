@@ -31,6 +31,10 @@ bool parseTagToken(const std::string& tok, int& outTag, std::string* errOut) {
         outTag = Slime::platformTag;
         return true;
     }
+    if (tok == "redrock") {
+        outTag = Slime::mapTestRockTag;
+        return true;
+    }
     try {
         outTag = std::stoi(tok);
         return true;
@@ -44,6 +48,7 @@ const char* tagNameForSave(int tag) {
     if (tag == Slime::grassTag) return "grass";
     if (tag == Slime::stoneTag) return "stone";
     if (tag == Slime::platformTag) return "platform";
+    if (tag == Slime::mapTestRockTag) return "redrock";
     return "platform";
 }
 

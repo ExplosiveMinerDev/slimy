@@ -153,6 +153,9 @@ void buildSceneCore(World& world) {
         ball->friction = 0.4f;
         ball->restitution = 0.45f;
     }
+
+    // === Map update test (see maps/default.sjmap): caillou rouge sur le sol ===
+    addStatic(Shape::box(0.5f, 0.45f), {4.f, 10.35f}, Slime::mapTestRockTag);
 }
 
 void buildScene(World& world) {
