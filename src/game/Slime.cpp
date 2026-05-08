@@ -15,6 +15,14 @@ namespace {
 /// Spike never counts. Static = any solid. Dynamic = only crates/balls (stand on top).
 bool footOnBodySupport(const Vec2& footPos, Body& b) {
     if (b.tag == Slime::spikeHazardTag) return false;
+    if (b.tag == Slime::bouncyPadTag && b.type == BodyType::Static) {
+        Vec2 n, closest;
+        float depth;
+        Vec2 probe = footPos + Vec2{0.f, 0.055f};
+        if (!pointVsBody(probe, b, n, depth, closest)) return false;
+        if (n.y > -0.38f) return false;
+        return true;
+    }
     Vec2 n, closest;
     float depth;
     Vec2 probe = footPos + Vec2{0.f, 0.055f};
@@ -86,6 +94,15 @@ bool blobGlueSurfaceBrace(const SoftBody& sb, const World& world) {
     return false;
 }
 
+static thread_local uint32_t s_rng = 0x9E3779B9u;
+inline float rnd11() {
+    s_rng ^= s_rng << 13;
+    s_rng ^= s_rng >> 17;
+    s_rng ^= s_rng << 5;
+    return ((s_rng & 0xFFFFFF) * (1.f / float(0xFFFFFF))) * 2.f - 1.f;
+}
+inline float rnd01() { return rnd11() * 0.5f + 0.5f; }
+
 } // namespace
 
 void Slime::spawn(World& world, const Vec2& pos, float radius, int segments, int tag) {
@@ -112,6 +129,8 @@ void Slime::spawn(World& world, const Vec2& pos, float radius, int segments, int
     spikeDwell_ = 0.f;
     spikeSplitCd_ = 0.f;
     spikeSliceHint_ = {0.f, 0.f};
+    embeddedSpikes_.clear();
+    bouncyPadCooldown_ = 0.f;
     grabBodyId_ = 0;
     wasGrabHeld_ = false;
     trailEmitCd_ = 0.f;
@@ -144,6 +163,14 @@ void Slime::applySpikeHazard(float dt, World& world) {
     Vec2 nAcc{0, 0};
     bool touching = false;
 
+    float vr = visualRadius_;
+    for (auto& sb : world.softBodies()) {
+        if (sb->tag != myTag_) continue;
+        Vec2 cc = sb->centroid();
+        for (auto& q : sb->points) vr = std::max(vr, distance(q.pos, cc));
+    }
+    Vec2 cEmbed = playerMassCentroid(world, myTag_);
+
     for (auto& sb : world.softBodies()) {
         if (sb->tag != myTag_) continue;
         for (auto& pt : sb->points) {
@@ -163,6 +190,27 @@ void Slime::applySpikeHazard(float dt, World& world) {
                 float push = std::min(depth, 0.11f) * dt * 3.4f;
                 pt.pos += n * push;
                 pt.prev += n * push;
+
+                // Pic qui « reste planté » dans le slime — accumulation limitée.
+                const float snagChance =
+                    std::clamp((depth - kMinPen) * 26.f, 0.f, 1.f) * dt * 6.5f;
+                if (embeddedSpikes_.size() < 18 && rnd01() < snagChance) {
+                    Vec2 radial = pt.pos - cEmbed;
+                    float rl = radial.len();
+                    if (rl > 0.035f) {
+                        radial = radial * (std::min(rl, vr * 1.08f) / rl);
+                        bool dup = false;
+                        for (const auto& es : embeddedSpikes_) {
+                            Vec2 d = es.radial - radial;
+                            if (d.lenSq() < 0.024f) {
+                                dup = true;
+                                break;
+                            }
+                        }
+                        if (!dup)
+                            embeddedSpikes_.push_back({radial, rnd01() * 6.2831853f});
+                    }
+                }
             }
         }
     }
@@ -173,29 +221,103 @@ void Slime::applySpikeHazard(float dt, World& world) {
         if (nAcc.lenSq() > 1e-12f)
             spikeSliceHint_ = nAcc;
     } else {
-        if (prevDwell >= 0.17f && spikeSplitCd_ <= 0.f && spikeSliceHint_.lenSq() > 1e-10f) {
+        if (prevDwell >= 0.13f && spikeSplitCd_ <= 0.f && spikeSliceHint_.lenSq() > 1e-10f) {
             Vec2 hint = spikeSliceHint_.normalized();
             Vec2 axis{-hint.y, hint.x};
-            if (world.splitLargestBlobWithTag(myTag_, axis))
+            if (world.splitLargestBlobWithTag(myTag_, axis)) {
                 spikeSplitCd_ = 2.6f;
+                embeddedSpikes_.clear();
+            }
         }
         spikeDwell_ = 0.f;
         spikeSliceHint_ = {0.f, 0.f};
     }
 }
 
-namespace {
-// Tiny xorshift PRNG — gives just enough launch jitter without RNG-state hassle.
-// Thread-local so each thread (or future per-slime seed) gets independent sequence.
-static thread_local uint32_t s_rng = 0x9E3779B9u;
-inline float rnd11() {
-    s_rng ^= s_rng << 13;
-    s_rng ^= s_rng >> 17;
-    s_rng ^= s_rng << 5;
-    return ((s_rng & 0xFFFFFF) * (1.f / float(0xFFFFFF))) * 2.f - 1.f; // −1..1
+void Slime::syncEmbeddedSpikes(float dt, const World& world) {
+    if (embeddedSpikes_.empty()) return;
+    float targetR = visualRadius_ * 0.92f;
+    for (auto& e : embeddedSpikes_) {
+        e.phase += dt * (4.2f + 0.35f * std::fabs(std::sin(e.phase)));
+        float L = e.radial.len();
+        if (L < 1e-4f) continue;
+        Vec2 dir = e.radial * (1.f / L);
+        float wantL = targetR + std::sin(e.phase * 1.15f) * 0.045f * visualRadius_;
+        float newL = L + (wantL - L) * std::min(1.f, dt * 7.f);
+        Vec2 wobble{-dir.y, dir.x};
+        e.radial = dir * newL + wobble * (0.055f * visualRadius_ * std::sin(e.phase * 2.1f));
+    }
+    (void)world;
 }
-inline float rnd01() { return rnd11() * 0.5f + 0.5f; }
-} // namespace
+
+void Slime::applyEmbeddedSpikePhysics(float dt, World& world) {
+    if (embeddedSpikes_.empty()) return;
+    Vec2 c = playerMassCentroid(world, myTag_);
+    const float snag = std::min(1.f, embeddedSpikes_.size() * 0.065f);
+    float wobSum = 0.f;
+    for (const auto& e : embeddedSpikes_)
+        wobSum += std::sin(e.phase + e.radial.x * 2.7f);
+    const float wmag = snag * (0.55f + 0.45f * (wobSum / std::max(1.f, (float)embeddedSpikes_.size())));
+
+    for (auto& sb : world.softBodies()) {
+        if (sb->tag != myTag_) continue;
+        for (auto& p : sb->points) {
+            Vec2 dx = p.pos - c;
+            float dist = dx.len();
+            if (dist < 1e-4f) continue;
+            Vec2 tang{-dx.y / dist, dx.x / dist};
+            p.force += tang * (wmag * 85.f * p.mass);
+            p.force.y += snag * 26.f * p.mass;
+        }
+    }
+    (void)dt;
+}
+
+void Slime::applyBouncyPads(float dt, World& world) {
+    bouncyPadCooldown_ = std::max(0.f, bouncyPadCooldown_ - dt);
+    if (bouncyPadCooldown_ > 0.f) return;
+    if (playerVel_.y < 2.2f) return;
+
+    for (auto& sb : world.softBodies()) {
+        if (sb->tag != myTag_) continue;
+        for (auto& pt : sb->points) {
+            if (pt.pinned) continue;
+            for (auto& bp : world.bodies()) {
+                if (bp->tag != bouncyPadTag || bp->type != BodyType::Static) continue;
+                Vec2 n, cl;
+                float depth;
+                Vec2 probe = pt.pos + Vec2{0.f, 0.085f};
+                if (!pointVsBody(probe, *bp, n, depth, cl)) continue;
+                if (depth < 0.014f) continue;
+                if (n.y > -0.28f) continue;
+
+                for (auto& sb2 : world.softBodies()) {
+                    if (sb2->tag != myTag_) continue;
+                    for (auto& q : sb2->points) {
+                        q.vel.y -= 13.5f;
+                        q.vel.x += rnd11() * 1.8f;
+                    }
+                }
+                bouncyPadCooldown_ = 0.42f;
+                return;
+            }
+        }
+    }
+}
+
+void Slime::embeddedSpikeDrawOffsets(const World& world, std::vector<Vec2>& outOffsets) const {
+    outOffsets.clear();
+    outOffsets.reserve(embeddedSpikes_.size());
+    for (const auto& e : embeddedSpikes_) {
+        Vec2 r = e.radial;
+        float L = r.len();
+        if (L < 1e-4f) continue;
+        Vec2 dir = r * (1.f / L);
+        float w = std::sin(e.phase * 1.65f) * 0.07f * visualRadius_;
+        outOffsets.push_back(dir * L + Vec2{-dir.y, dir.x} * w);
+    }
+    (void)world;
+}
 
 void Slime::emitLandingTrail(World& world, float impactSpeed) {
     if (impactSpeed < 1.6f) return;
@@ -390,6 +512,16 @@ void Slime::launch(World& world, const Vec2& aimDir) {
     // half-second, then the curve flattens. Feels like a real charge "ramping
     // up": light press → quick small hops, full hold → bigger but not 5× bigger.
     float te = 1.f - (1.f - t) * (1.f - t) * (1.f - t);
+
+    if (!embeddedSpikes_.empty()) {
+        const size_t n = embeddedSpikes_.size();
+        const float shakeOff = std::clamp(te * 0.9f, 0.12f, 1.f);
+        size_t keep = n - std::max<size_t>(1, (size_t)std::floor((float)n * shakeOff));
+        if (te >= 0.96f) keep = 0;
+        while (embeddedSpikes_.size() > keep)
+            embeddedSpikes_.pop_back();
+    }
+
     float forceMag = jumpForceMin + (jumpForceMax - jumpForceMin) * te;
 
     // Jitter: random angle + magnitude → less predictable arc each jump.
@@ -534,6 +666,9 @@ void Slime::update(float dt, World& world, const Vec2& aimWorld, bool jumpHeld, 
     spikeSplitCd_ = std::max(0.f, spikeSplitCd_ - dt);
     jumpCooldownRemaining_ = std::max(0.f, jumpCooldownRemaining_ - dt);
     applySpikeHazard(dt, world);
+    syncEmbeddedSpikes(dt, world);
+    applyEmbeddedSpikePhysics(dt, world);
+    applyBouncyPads(dt, world);
 
     // Compute aim direction from current player centroid → mouse.
     {

@@ -205,6 +205,14 @@ int runSinglePlayer() {
 
         renderer.beginFrame();
         renderer.drawWorld(world, &slime.puddles());
+        if (slime.stuckSpikeCount() > 0 && Slime::playerBlobCount(world, slime.myTag()) > 0) {
+            std::vector<Vec2> spikeOff;
+            slime.embeddedSpikeDrawOffsets(world, spikeOff);
+            if (!spikeOff.empty()) {
+                Vec2 o = Slime::playerMassCentroid(world, slime.myTag());
+                renderer.drawSlimeEmbeddedSpikes(o, spikeOff);
+            }
+        }
         if (slime.eyesValid()) {
             renderer.drawSlimeFace(slime.leftEye(), slime.rightEye(),
                                    slime.playerVelocity(), slime.visualRadius());
@@ -560,6 +568,15 @@ bool runOnlineSession(const std::string& host, uint16_t port, std::string& errOu
         renderer.drawWorld(viewWorld, netTrails.empty() ? nullptr : &netTrails);
         for (auto& rs : client.displaySlimes()) {
             renderer.drawRemoteSlimeBody(rs.points, rs.isLocalPlayer);
+            if (rs.embeddedSpikeCount > 0 && !rs.points.empty()) {
+                float rad = 0.9f;
+                for (auto& p : rs.points)
+                    rad = std::max(rad, distance(p, rs.centroid));
+                renderer.drawSlimeEmbeddedSpikesApprox(rs.centroid, rad, (int)rs.embeddedSpikeCount,
+                                                        rs.ownerId);
+            }
+        }
+        for (auto& rs : client.displaySlimes()) {
             float radius = 0.9f;
             if (!rs.points.empty()) {
                 float maxR = 0.f;

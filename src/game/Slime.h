@@ -36,6 +36,10 @@ public:
     static constexpr int ballTag = 7;
     /// Solides décor / tests carte (ex. caillou rouge dans default.sjmap).
     static constexpr int mapTestRockTag = 8;
+    /// Champignon rebond (surface bombée) — renvoie le slime vers le ciel.
+    static constexpr int bouncyPadTag = 9;
+    /// Bande très glissante (friction basse sur le sol).
+    static constexpr int speedGelTag = 10;
 
     /// Launch velocity magnitudes (world units / s) — applied along the aim direction.
     /// (Tuned at ~80% of the original feel — momentum reduced by 20%.)
@@ -93,8 +97,16 @@ public:
 
     int myTag() const { return myTag_; }
 
+    /// Pics métalliques coincés dans le corps (sync réseau via `stuckSpikeCount`).
+    size_t stuckSpikeCount() const { return embeddedSpikes_.size(); }
+    /// Offsets depuis le centroïde pour le rendu (solo / prédiction locale).
+    void embeddedSpikeDrawOffsets(const World& world, std::vector<Vec2>& outOffsets) const;
+
 private:
     void applySpikeHazard(float dt, World& world);
+    void syncEmbeddedSpikes(float dt, const World& world);
+    void applyEmbeddedSpikePhysics(float dt, World& world);
+    void applyBouncyPads(float dt, World& world);
     void updateGrabThrow(float dt, World& world, bool grabHeld);
     void launch(World& world, const Vec2& aimDir);
     void emitLandingTrail(World& world, float impactSpeed);
@@ -109,6 +121,13 @@ private:
     float spikeSplitCd_ = 0.f;
     /// Latest summed spike outward normals while snagged (axis for `splitLargestBlobWithTag`).
     Vec2 spikeSliceHint_{0.f, 0.f};
+
+    struct EmbeddedSpike {
+        Vec2 radial{}; ///< Depuis le centroïde vers la surface (longueur ~ rayon visuel).
+        float phase = 0.f;
+    };
+    std::vector<EmbeddedSpike> embeddedSpikes_;
+    float bouncyPadCooldown_ = 0.f;
 
     uint32_t grabBodyId_ = 0;
     bool wasGrabHeld_ = false;

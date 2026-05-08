@@ -358,6 +358,15 @@ int main() {
 
         renderer.beginFrame();
         renderer.drawWorld(world, nullptr);
+        if (mode == UiMode::Testing && slime.stuckSpikeCount() > 0 &&
+            pe::Slime::playerBlobCount(world, slime.myTag()) > 0) {
+            std::vector<pe::Vec2> spikeOff;
+            slime.embeddedSpikeDrawOffsets(world, spikeOff);
+            if (!spikeOff.empty()) {
+                pe::Vec2 o = pe::Slime::playerMassCentroid(world, slime.myTag());
+                renderer.drawSlimeEmbeddedSpikes(o, spikeOff);
+            }
+        }
         if (mode == UiMode::Testing && slime.eyesValid()) {
             renderer.drawSlimeFace(slime.leftEye(), slime.rightEye(), slime.playerVelocity(),
                                    slime.visualRadius());

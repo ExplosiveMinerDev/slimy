@@ -87,6 +87,7 @@ Vec2 spawnPosForSlot(int slot) {
 void appendSolidMapEntries(World& world, const std::vector<SolidMapEntry>& entries) {
     auto frictionFor = [](int tag) -> float {
         if (tag == Slime::spikeHazardTag) return 0.4f;
+        if (tag == Slime::speedGelTag) return 0.07f;
         return 0.92f;
     };
     for (const auto& e : entries) {
@@ -111,6 +112,13 @@ void buildSceneCore(World& world) {
     auto spikeTri = []() {
         std::vector<Vec2> v{{0.f, -0.42f}, {0.30f, 0.f}, {-0.30f, 0.f}};
         return Shape::polygon(v);
+    };
+    auto mushCap = []() {
+        std::vector<Vec2> v{
+            {-0.55f, 0.22f}, {0.55f, 0.22f}, {0.38f, -0.02f}, {0.22f, -0.38f},
+            {0.f, -0.52f},   {-0.22f, -0.38f}, {-0.38f, -0.02f},
+        };
+        return Shape::polygon(std::move(v));
     };
 
     // === Bounds ===
@@ -153,6 +161,11 @@ void buildSceneCore(World& world) {
         ball->friction = 0.4f;
         ball->restitution = 0.45f;
     }
+
+    // === Fun props: champignons rebonds + gel ultra-glissant ===
+    addStatic(mushCap(), {-26.f, 9.68f}, Slime::bouncyPadTag, 0.55f);
+    addStatic(mushCap(), {-30.5f, 9.68f}, Slime::bouncyPadTag, 0.55f);
+    addStatic(Shape::box(4.2f, 0.14f), {-18.f, 9.83f}, Slime::speedGelTag, 0.07f);
 
     // === Map update test (see maps/default.sjmap): caillou rouge sur le sol ===
     addStatic(Shape::box(0.5f, 0.45f), {4.f, 10.35f}, Slime::mapTestRockTag);

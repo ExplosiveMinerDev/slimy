@@ -5,9 +5,9 @@
 
 namespace pe::net {
 
-constexpr uint32_t kProtocolVersion = 10;
+constexpr uint32_t kProtocolVersion = 11;
 /// Bump when shipping a new Windows client binary (must match server `--build` / manifest for auto-update).
-constexpr uint32_t kClientBuild = 13;
+constexpr uint32_t kClientBuild = 14;
 /// Max UTF-8 bytes per chat line (wire + UI clipping).
 constexpr int kMaxChatPayloadBytes = 96;
 /// Max UTF-8 bytes for a user-supplied room name.
@@ -162,6 +162,8 @@ struct SlimeStatePayload {
     uint8_t isCharging;
     uint8_t isLocal;         // server stamps 1 for receiver, 0 for others
     uint16_t numPoints;
+    uint8_t embeddedSpikeCount; ///< Stuck spike props on slime (0..18 capped server-side); visual + physics.
+    uint8_t reserved0;
 };
 
 struct DynamicRigidNetState {

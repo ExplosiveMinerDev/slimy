@@ -219,6 +219,11 @@ void Room::broadcastSnapshot(_ENetHost* host) {
             }
             payload.isLocal = (uint8_t)(i == receiver ? 1 : 0);
             payload.numPoints = (uint16_t)n;
+            payload.embeddedSpikeCount = 0;
+            payload.reserved0 = 0;
+            if (s.slimeAlive)
+                payload.embeddedSpikeCount =
+                    (uint8_t)std::min<size_t>(255, slimes_[(size_t)i].stuckSpikeCount());
 
             size_t off = buf.size();
             buf.resize(off + sizeof(payload));

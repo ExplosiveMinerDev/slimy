@@ -46,6 +46,11 @@ public:
     /// Draws a remote slime body (perimeter polygon) from raw world-space points.
     /// Used by the client to render slimes received from the server.
     void drawRemoteSlimeBody(const std::vector<Vec2>& worldPoints, bool isLocalPlayer);
+    /// Small spike triangles stuck on the slime (solo / exact offsets).
+    void drawSlimeEmbeddedSpikes(Vec2 centroidWorld, const std::vector<Vec2>& radialOffsets);
+    /// Decorative spikes from count only (online snapshots — angles from golden ratio).
+    void drawSlimeEmbeddedSpikesApprox(Vec2 centroidWorld, float radiusWorld, int count,
+                                       uint32_t patternSalt);
     /// Persistent top banner inside the pixel canvas (e.g. "HOSTING ...").
     /// Drawn between beginFrame()/endFrame() so it's pixel-perfect and scales.
     void drawHUDBanner(const std::string& text);

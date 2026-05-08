@@ -25,6 +25,7 @@ struct RemoteSlime {
     Vec2 aim{0.f, -1.f};
     float chargeFrac = 0.f;
     bool isCharging = false;
+    uint8_t embeddedSpikeCount = 0;
     std::vector<Vec2> points;
     std::vector<TrailDropNet> trail;
 };

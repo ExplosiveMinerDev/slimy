@@ -42,6 +42,9 @@ RemoteSlime blendSlime(const RemoteSlime& from, const RemoteSlime& to, float w) 
     out.leftEye = from.leftEye * (1.f - w) + to.leftEye * w;
     out.rightEye = from.rightEye * (1.f - w) + to.rightEye * w;
     out.chargeFrac = from.chargeFrac * (1.f - w) + to.chargeFrac * w;
+    out.embeddedSpikeCount =
+        (uint8_t)std::lround((1.f - w) * (float)from.embeddedSpikeCount +
+                             w * (float)to.embeddedSpikeCount);
     if (!from.points.empty() && from.points.size() == to.points.size()) {
         out.points.resize(to.points.size());
         for (size_t i = 0; i < to.points.size(); ++i)
@@ -527,6 +530,7 @@ void Client::handleSnapshot(const uint8_t* data, size_t len) {
         rs.aim = {payload.aimX, payload.aimY};
         rs.chargeFrac = payload.chargeFrac;
         rs.isCharging = payload.isCharging != 0;
+        rs.embeddedSpikeCount = payload.embeddedSpikeCount;
         rs.points.resize(payload.numPoints);
         for (uint16_t k = 0; k < payload.numPoints; ++k) {
             float xy[2];

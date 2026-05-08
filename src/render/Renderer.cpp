@@ -244,6 +244,16 @@ BodyStyle styleForBody(const Body& b) {
         s.outline = {92, 28, 24, 255};
         s.accent = {236, 152, 132, 255};
         s.deep = {118, 42, 38, 255};
+    } else if (b.tag == Slime::bouncyPadTag) {
+        s.fill = {215, 92, 168, 255};
+        s.outline = {92, 28, 72, 255};
+        s.accent = {255, 210, 235, 255};
+        s.deep = {148, 52, 118, 255};
+    } else if (b.tag == Slime::speedGelTag) {
+        s.fill = {72, 188, 215, 255};
+        s.outline = {22, 72, 108, 255};
+        s.accent = {190, 248, 255, 255};
+        s.deep = {42, 118, 148, 255};
     } else if (b.type == BodyType::Static) {
         s.fill = {84, 88, 108, 255};
         s.outline = {30, 32, 44, 255};
@@ -446,6 +456,43 @@ void Renderer::drawWorld(const World& world, const std::vector<SlimePuddle>* sli
     for (auto& b : world.bodies()) {
         if (b->type != BodyType::Dynamic || b->grabOwnerTag == 0) continue;
         drawOne(*b);
+    }
+}
+
+void Renderer::drawSlimeEmbeddedSpikes(Vec2 centroidWorld, const std::vector<Vec2>& radialOffsets) {
+    const ::Color fillSpike{178, 42, 72, 255};
+    const ::Color edgeSpike{62, 18, 34, 255};
+    const ::Color tipHi{255, 228, 210, 255};
+    for (const Vec2& off : radialOffsets) {
+        float L = off.len();
+        if (L < 1e-5f) continue;
+        Vec2 dir = off * (1.f / L);
+        Vec2 base = centroidWorld + dir * L;
+        Vec2 tip = centroidWorld + dir * (L + 0.15f);
+        Vec2 side = Vec2{-dir.y, dir.x} * 0.065f;
+        Vector2 p0 = {(float)iround(worldToScreen(tip).x), (float)iround(worldToScreen(tip).y)};
+        Vector2 p1 = {(float)iround(worldToScreen(base + side).x),
+                      (float)iround(worldToScreen(base + side).y)};
+        Vector2 p2 = {(float)iround(worldToScreen(base - side).x),
+                      (float)iround(worldToScreen(base - side).y)};
+        DrawTriangle(p0, p1, p2, fillSpike);
+        DrawTriangleLines(p0, p1, p2, edgeSpike);
+        DrawPixel(iround(p0.x), iround(p0.y), tipHi);
+    }
+}
+
+void Renderer::drawSlimeEmbeddedSpikesApprox(Vec2 centroidWorld, float radiusWorld, int count,
+                                             uint32_t patternSalt) {
+    if (count <= 0 || radiusWorld <= 1e-4f) return;
+    std::vector<Vec2> tmp;
+    tmp.reserve(1);
+    const float golden = 2.39996322972865332f;
+    for (int i = 0; i < count; ++i) {
+        float ang = i * golden + patternSalt * 0.004189f;
+        Vec2 dir{std::cos(ang), std::sin(ang)};
+        tmp.clear();
+        tmp.push_back(dir * (radiusWorld * 0.88f));
+        drawSlimeEmbeddedSpikes(centroidWorld, tmp);
     }
 }
 
