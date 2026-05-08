@@ -1,0 +1,8 @@
+# Carte solide par défaut (chargée après la scène de base par buildScene).
+# Éditer avec slimyjourney_mapedit.exe — F6 enregistre ici comme défaut du jeu.
+# Format: box centreX centreY demiLargeur demiHauteur tag
+# tag: grass | stone | platform
+
+box -10.000 5.500 3.000 0.250 platform
+box 10.000 5.500 3.000 0.250 platform
+box 0.000 3.000 5.000 0.200 platform
