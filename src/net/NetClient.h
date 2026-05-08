@@ -61,6 +61,19 @@ enum class JoinFeedback : uint8_t {
     TooManyRooms = 6,
 };
 
+/// Résultat d'une connexion courte au hub pour savoir si une MAJ client est annoncée (`ServerVersionInfo`).
+enum class HubUpdateCheckResult {
+    HubUnreachable,
+    NoUpdatePublished, ///< Timeout sans `ServerVersionInfo` (serveur sans `--manifest` / pas d'annonce).
+    ClientUpToDate,  ///< Annonce reçue mais build ≤ `kClientBuild` ou pas d'URL utile.
+    ReadyToDownload, ///< `needsClientUpgrade()` — remplit `outNoticeBuild` / `outDownloadUrl`.
+};
+
+/// Connexion UDP courte au hub : lit l'annonce de mise à jour du serveur (même flux qu'en ligne).
+HubUpdateCheckResult pollHubForClientUpdate(const std::string& host, uint16_t port,
+                                            uint32_t& outNoticeBuild, std::string& outDownloadUrl,
+                                            uint32_t wallTimeoutMs = 8000);
+
 class Client {
 public:
     bool connect(const std::string& host, uint16_t port = kDefaultPort,

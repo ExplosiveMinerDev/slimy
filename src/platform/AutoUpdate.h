@@ -4,6 +4,19 @@
 
 namespace pe::platform {
 
+enum class AutomaticUpdateResult {
+    NotConfigured,       ///< URL de verification vide
+    UnsupportedPlatform, ///< Pas Windows
+    FetchFailed,         ///< Telechargement du fichier hub impossible
+    BadManifest,         ///< Pas de lignes build=/url= valides
+    UpToDate,            ///< build annonce <= kClientBuild
+    DownloadFailed       ///< Echec telechargement applique (exe intact)
+};
+
+/// Telecharge `hubManifestCheckUrl` (meme format texte que `--manifest` serveur : build=N, url=...).
+/// Si `build` > `kClientBuild`, appelle `downloadAndRestartFromUrl(url)` (sort du process si OK).
+AutomaticUpdateResult tryAutomaticUpdate(const std::string& hubManifestCheckUrl);
+
 /// Windows : télécharge depuis `urlUtf8` (http/https) puis applique la mise à jour.
 ///
 /// **URL directe** : un `.exe` PE (ou fichier > 512 Ko commençant par MZ) → remplace le binaire

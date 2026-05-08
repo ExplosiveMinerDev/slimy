@@ -1,4 +1,6 @@
 #include "platform/AutoUpdate.h"
+#include "net/Protocol.h"
+
 #include <cctype>
 #include <cstdlib>
 #include <cstdio>
@@ -76,6 +78,112 @@ bool splitHttpUrl(const std::string& url, bool& https, std::string& host,
         port = https ? (INTERNET_PORT)443 : (INTERNET_PORT)80;
     }
     return !host.empty();
+}
+
+bool httpGetUtf8(const std::string& urlUtf8, std::string& out, size_t maxBytes) {
+    out.clear();
+    bool https = false;
+    std::string host;
+    INTERNET_PORT port = 0;
+    std::string pathAndQuery;
+    if (!splitHttpUrl(urlUtf8, https, host, port, pathAndQuery)) return false;
+
+    std::wstring hostW = utf8ToWide(host);
+    std::wstring objectW = utf8ToWide(pathAndQuery);
+    if (hostW.empty() || objectW.empty()) return false;
+
+    HINTERNET session =
+        WinHttpOpen(L"SlimyJourney/1.0", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+                    WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+    if (!session) return false;
+
+    HINTERNET conn = WinHttpConnect(session, hostW.c_str(), port, 0);
+    if (!conn) {
+        WinHttpCloseHandle(session);
+        return false;
+    }
+
+    DWORD flags = WINHTTP_FLAG_REFRESH;
+    if (https) flags |= WINHTTP_FLAG_SECURE;
+
+    HINTERNET req =
+        WinHttpOpenRequest(conn, L"GET", objectW.c_str(), nullptr, WINHTTP_NO_REFERER,
+                           WINHTTP_DEFAULT_ACCEPT_TYPES, flags);
+    if (!req) {
+        WinHttpCloseHandle(conn);
+        WinHttpCloseHandle(session);
+        return false;
+    }
+
+    if (!WinHttpSendRequest(req, WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0,
+                            0, 0) ||
+        !WinHttpReceiveResponse(req, nullptr)) {
+        WinHttpCloseHandle(req);
+        WinHttpCloseHandle(conn);
+        WinHttpCloseHandle(session);
+        return false;
+    }
+
+    DWORD status = 0;
+    DWORD sz = sizeof(status);
+    if (!WinHttpQueryHeaders(req, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+                             WINHTTP_HEADER_NAME_BY_INDEX, &status, &sz,
+                             WINHTTP_NO_HEADER_INDEX) ||
+        status != 200) {
+        WinHttpCloseHandle(req);
+        WinHttpCloseHandle(conn);
+        WinHttpCloseHandle(session);
+        return false;
+    }
+
+    std::vector<uint8_t> chunk(65536);
+    for (;;) {
+        DWORD read = 0;
+        if (!WinHttpReadData(req, chunk.data(), (DWORD)chunk.size(), &read)) {
+            WinHttpCloseHandle(req);
+            WinHttpCloseHandle(conn);
+            WinHttpCloseHandle(session);
+            return false;
+        }
+        if (read == 0) break;
+        if (out.size() + read > maxBytes) {
+            WinHttpCloseHandle(req);
+            WinHttpCloseHandle(conn);
+            WinHttpCloseHandle(session);
+            return false;
+        }
+        out.append(reinterpret_cast<const char*>(chunk.data()), read);
+    }
+
+    WinHttpCloseHandle(req);
+    WinHttpCloseHandle(conn);
+    WinHttpCloseHandle(session);
+    return true;
+}
+
+bool parseHubReleaseText(const std::string& text, uint32_t& outBuild, std::string& outUrl) {
+    outBuild = 0;
+    outUrl.clear();
+    std::istringstream iss(text);
+    std::string line;
+    while (std::getline(iss, line)) {
+        while (!line.empty() && (line.back() == '\r' || line.back() == '\n'))
+            line.pop_back();
+        line = trimAscii(line);
+        if (line.empty() || line[0] == '#') continue;
+        const size_t eq = line.find('=');
+        if (eq == std::string::npos) continue;
+        std::string key = trimAscii(line.substr(0, eq));
+        std::string val = trimAscii(line.substr(eq + 1));
+        if (key == "build") {
+            try {
+                outBuild = (uint32_t)std::stoul(val);
+            } catch (...) {}
+        } else if (key == "url") {
+            outUrl = val;
+        }
+    }
+    return outBuild != 0 && !outUrl.empty();
 }
 
 bool httpDownloadToFile(const std::string& urlUtf8, const std::wstring& destPath) {
@@ -555,11 +663,34 @@ void downloadAndRestartFromUrl(const std::string& urlUtf8) {
     ExitProcess(0);
 }
 
+namespace {
+AutomaticUpdateResult tryAutomaticUpdateImpl(const std::string& hubManifestCheckUrl) {
+    if (hubManifestCheckUrl.empty()) return AutomaticUpdateResult::NotConfigured;
+    std::string body;
+    if (!httpGetUtf8(hubManifestCheckUrl, body, 65536)) return AutomaticUpdateResult::FetchFailed;
+    uint32_t b = 0;
+    std::string dl;
+    if (!parseHubReleaseText(body, b, dl)) return AutomaticUpdateResult::BadManifest;
+    if (b <= pe::net::kClientBuild) return AutomaticUpdateResult::UpToDate;
+    downloadAndRestartFromUrl(dl);
+    return AutomaticUpdateResult::DownloadFailed;
+}
+} // namespace
+
+AutomaticUpdateResult tryAutomaticUpdate(const std::string& hubManifestCheckUrl) {
+    return tryAutomaticUpdateImpl(hubManifestCheckUrl);
+}
+
 } // namespace pe::platform
 
 #else
 
 namespace pe::platform {
+
+AutomaticUpdateResult tryAutomaticUpdate(const std::string& hubManifestCheckUrl) {
+    if (hubManifestCheckUrl.empty()) return AutomaticUpdateResult::NotConfigured;
+    return AutomaticUpdateResult::UnsupportedPlatform;
+}
 
 void downloadAndRestartFromUrl(const std::string&) {
     std::fprintf(stderr, "[update] mise a jour auto — uniquement sur Windows\n");

@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <thread>
 #include <unordered_set>
 
 namespace pe::net {
@@ -630,6 +631,37 @@ void Client::serviceIncoming() {
             default: break;
         }
     }
+}
+
+HubUpdateCheckResult pollHubForClientUpdate(const std::string& host, uint16_t port,
+                                            uint32_t& outNoticeBuild, std::string& outDownloadUrl,
+                                            uint32_t wallTimeoutMs) {
+    outNoticeBuild = 0;
+    outDownloadUrl.clear();
+    Client c;
+    const uint32_t connectMs = std::min(wallTimeoutMs, 12000u);
+    if (!c.connect(host, port, connectMs)) return HubUpdateCheckResult::HubUnreachable;
+
+    const auto deadline =
+        std::chrono::steady_clock::now() + std::chrono::milliseconds(wallTimeoutMs);
+    while (std::chrono::steady_clock::now() < deadline) {
+        c.serviceIncoming();
+        if (c.needsClientUpgrade()) {
+            outNoticeBuild = c.updateNoticeBuild();
+            outDownloadUrl = c.updateNoticeUrl();
+            c.disconnect();
+            return HubUpdateCheckResult::ReadyToDownload;
+        }
+        if (c.hasUpdateNotice()) {
+            outNoticeBuild = c.updateNoticeBuild();
+            outDownloadUrl = c.updateNoticeUrl();
+            c.disconnect();
+            return HubUpdateCheckResult::ClientUpToDate;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    c.disconnect();
+    return HubUpdateCheckResult::NoUpdatePublished;
 }
 
 } // namespace pe::net

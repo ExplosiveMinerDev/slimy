@@ -15,13 +15,15 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <mutex>
 
 using namespace pe;
 
 namespace {
 
 constexpr float kChatBubbleFadeSec = 0.35f;
-/** Default hub address shown in Online → SERVER IP (GCP or replace for your host). */
+/** Default hub address shown in Online → SERVER IP (GCP or replace for your host).
+ *  Utilise aussi pour « Mise a jour » : interroge ce hub (UDP) pour l'annonce serveur. */
 constexpr const char* kDefaultJoinHost = "35.232.34.254";
 
 /// Windows: téléchargement MAJ client en cours (affiche un libellé lobby / HUD).
@@ -630,10 +632,10 @@ MenuResult runMenu(std::string& joinFailHint) {
     const std::string errBanner = joinFailHint;
     joinFailHint.clear();
     bool joinPanel = !errBanner.empty();
-    bool updatePanel = false;
     static std::string s_joinIpDraft = kDefaultJoinHost;
-    static std::string s_updateUrlDraft;
     std::atomic<bool> menuUpdateBusy{false};
+    std::mutex menuAuMsgMtx;
+    std::string menuAuMsg;
 
     std::string ipBuf = s_joinIpDraft;
     bool decided = false;
@@ -691,95 +693,7 @@ MenuResult runMenu(std::string& joinFailHint) {
 
         const ::Color warnCol{ 255, 185, 165, 255 };
 
-        if (updatePanel) {
-            DrawText("MISE A JOUR", bx, 18, 16, accent);
-            DrawText("Manifeste (# slimy-manifest) ou exe direct (HTTPS).",
-                     bx, 38, 9, inkDim);
-
-            Rectangle urlBox{ (float)bx, 52.f, (float)bw, 26.f };
-            DrawRectangle((int)urlBox.x, (int)urlBox.y, (int)urlBox.width, (int)urlBox.height,
-                          fieldBg);
-            DrawRectangleLines((int)urlBox.x, (int)urlBox.y, (int)urlBox.width,
-                               (int)urlBox.height, line);
-            DrawText(s_updateUrlDraft.c_str(), (int)urlBox.x + 6, (int)urlBox.y + 7, 11, ink);
-            const int cx = (int)urlBox.x + 6 + MeasureText(s_updateUrlDraft.c_str(), 11);
-            if (((int)(GetTime() * 2.f) % 2) == 0)
-                DrawRectangle(cx, (int)urlBox.y + 5, 2, 13, ink);
-
-            int ch;
-            while ((ch = GetCharPressed()) != 0) {
-                if (s_updateUrlDraft.size() < 480 && ch >= 32 && ch < 127)
-                    s_updateUrlDraft.push_back((char)ch);
-            }
-            if (IsKeyPressed(KEY_BACKSPACE) && !s_updateUrlDraft.empty()) s_updateUrlDraft.pop_back();
-
-            const bool pasteHeld =
-                IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL) ||
-                IsKeyDown(KEY_LEFT_SUPER) || IsKeyDown(KEY_RIGHT_SUPER);
-            if (pasteHeld && IsKeyPressed(KEY_V)) {
-                const char* clip = GetClipboardText();
-                if (clip && clip[0]) {
-                    std::string pasted(clip);
-                    const size_t nl = pasted.find_first_of("\r\n");
-                    if (nl != std::string::npos) pasted.resize(nl);
-                    s_updateUrlDraft.clear();
-                    for (char c : pasted) {
-                        if (s_updateUrlDraft.size() >= 480) break;
-                        const unsigned char u = (unsigned char)c;
-                        if (u >= 32 && u < 127) s_updateUrlDraft.push_back(c);
-                    }
-                }
-            }
-
-#if !defined(_WIN32)
-            DrawText("Telechargement auto — Windows uniquement.", bx, 86, 10, warnCol);
-#endif
-
-            int y = 112;
-            Rectangle rGo{ (float)bx, (float)y, (float)bw, (float)bh }; y += bh + gap;
-            Rectangle rBk{ (float)bx, (float)y, (float)bw, (float)bh };
-
-            auto trimUrl = [](std::string s) {
-                while (!s.empty() && (s.back() == ' ' || s.back() == '\t')) s.pop_back();
-                size_t i = 0;
-                while (i < s.size() && (s[i] == ' ' || s[i] == '\t')) ++i;
-                return s.substr(i);
-            };
-            std::string urlTrim = trimUrl(s_updateUrlDraft);
-            const bool urlOk =
-                urlTrim.rfind("https://", 0) == 0 || urlTrim.rfind("http://", 0) == 0;
-#if defined(_WIN32)
-            const bool canGo = urlOk && !menuUpdateBusy.load();
-#else
-            const bool canGo = false;
-#endif
-
-            const bool hGo = CheckCollisionPointRec(mp, rGo);
-            const bool hBk = CheckCollisionPointRec(mp, rBk);
-            flatBtn(bx, (int)rGo.y, bw, bh, "TELECHARGER", hGo, canGo, 13);
-            flatBtn(bx, (int)rBk.y, bw, bh, "RETOUR", hBk, true, 13);
-
-            if (menuUpdateBusy.load()) {
-                DrawRectangle(0, 0, kPixW, kPixH, ::Color{ 8, 18, 12, 200 });
-                const char* msg = "Telechargement...";
-                DrawText(msg, (kPixW - MeasureText(msg, 14)) / 2, kPixH / 2 - 8, 14, accent);
-            }
-
-            if (click && !menuUpdateBusy.load()) {
-                if (hGo && canGo) {
-#if defined(_WIN32)
-                    std::string url = urlTrim;
-                    if (!menuUpdateBusy.exchange(true)) {
-                        std::thread([url, &menuUpdateBusy]() {
-                            pe::platform::downloadAndRestartFromUrl(url);
-                            menuUpdateBusy.store(false);
-                        }).detach();
-                    }
-#endif
-                } else if (hBk) updatePanel = false;
-            }
-            if (IsKeyPressed(KEY_ESCAPE)) updatePanel = false;
-        } else if (joinPanel) {
+        if (joinPanel) {
             DrawText("SERVEUR", bx, 18, 16, accent);
             DrawText("Adresse du hub (UDP)", bx, 38, 9, inkDim);
 
@@ -879,10 +793,23 @@ MenuResult runMenu(std::string& joinFailHint) {
             const bool hU = CheckCollisionPointRec(mp, rUpdate);
             const bool hQ = CheckCollisionPointRec(mp, rQuit);
 
+            const bool updBtnOk = !menuUpdateBusy.load();
+
             flatBtn(bx, (int)rSolo.y,   bw, bh, "SOLO",    hS, true, 14);
             flatBtn(bx, (int)rOnline.y, bw, bh, "EN LIGNE", hO, true, 14);
-            flatBtn(bx, (int)rUpdate.y, bw, bh, "MISE A JOUR", hU, true, 14);
+            flatBtn(bx, (int)rUpdate.y, bw, bh, "MISE A JOUR", hU, updBtnOk, 14);
             flatBtn(bx, (int)rQuit.y,   bw, bh, "QUITTER", hQ, true, 14);
+
+            if (menuUpdateBusy.load()) {
+                const char* pend = "Verification / mise a jour...";
+                DrawText(pend, (kPixW - MeasureText(pend, 11)) / 2, 218, 11, accent);
+            } else {
+                std::lock_guard<std::mutex> lk(menuAuMsgMtx);
+                if (!menuAuMsg.empty())
+                    DrawText(menuAuMsg.c_str(), (kPixW - MeasureText(menuAuMsg.c_str(), 10)) / 2,
+                             218, 10,
+                             menuAuMsg.find("ECHEC") != std::string::npos ? warnCol : inkDim);
+            }
 
             if (click) {
                 if (hS) {
@@ -890,9 +817,45 @@ MenuResult runMenu(std::string& joinFailHint) {
                     decided = true;
                 } else if (hO)
                     joinPanel = true;
-                else if (hU)
-                    updatePanel = true;
-                else if (hQ) {
+                else if (hU && updBtnOk) {
+                    if (!menuUpdateBusy.exchange(true)) {
+                        menuAuMsg.clear();
+                        const std::string hubForUpdate =
+                            s_joinIpDraft.empty() ? std::string(kDefaultJoinHost) : s_joinIpDraft;
+                        std::thread([hubForUpdate, &menuUpdateBusy, &menuAuMsg, &menuAuMsgMtx]() {
+                            uint32_t nb = 0;
+                            std::string du;
+                            const net::HubUpdateCheckResult r = net::pollHubForClientUpdate(
+                                hubForUpdate, net::kDefaultPort, nb, du, 8000u);
+                            menuUpdateBusy.store(false);
+                            std::unique_lock<std::mutex> lk(menuAuMsgMtx);
+                            switch (r) {
+                                case net::HubUpdateCheckResult::HubUnreachable:
+                                    menuAuMsg = "ECHEC : hub injoignable (" + hubForUpdate + ")";
+                                    break;
+                                case net::HubUpdateCheckResult::NoUpdatePublished:
+                                    menuAuMsg =
+                                        "Pas d'annonce MAJ sur ce hub (--manifest serveur).";
+                                    break;
+                                case net::HubUpdateCheckResult::ClientUpToDate:
+                                    menuAuMsg = "Client a jour.";
+                                    break;
+                                case net::HubUpdateCheckResult::ReadyToDownload:
+#if defined(_WIN32)
+                                    menuAuMsg = "Telechargement / installation...";
+                                    lk.unlock();
+                                    pe::platform::downloadAndRestartFromUrl(du);
+                                    lk.lock();
+                                    menuAuMsg =
+                                        "ECHEC : telechargement (voir console pour details)";
+#else
+                                    menuAuMsg = "MAJ disponible — installer sous Windows.";
+#endif
+                                    break;
+                            }
+                        }).detach();
+                    }
+                } else if (hQ) {
                     res.mode = MenuResult::Quit;
                     decided = true;
                 }
@@ -904,9 +867,7 @@ MenuResult runMenu(std::string& joinFailHint) {
         }
 
         char footer[96];
-        if (updatePanel)
-            std::snprintf(footer, sizeof(footer), "Ctrl+V coller · ESC retour");
-        else if (joinPanel)
+        if (joinPanel)
             std::snprintf(footer, sizeof(footer), "port %u · ESC retour · Ctrl+V coller",
                           (unsigned)net::kDefaultPort);
         else
