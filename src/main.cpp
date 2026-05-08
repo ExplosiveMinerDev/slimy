@@ -620,8 +620,8 @@ struct MenuResult {
 
 MenuResult runMenu(std::string& joinFailHint) {
     SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_VSYNC_HINT);
-    InitWindow(720, 480, "SlimyJourney");
-    SetWindowMinSize(560, 360);
+    InitWindow(780, 520, "Slimy Journey");
+    SetWindowMinSize(560, 380);
     SetTargetFPS(60);
     SetExitKey(KEY_NULL);
     SetTextureFilter(GetFontDefault().texture, TEXTURE_FILTER_POINT);
@@ -630,27 +630,40 @@ MenuResult runMenu(std::string& joinFailHint) {
     const std::string errBanner = joinFailHint;
     joinFailHint.clear();
     bool joinPanel = !errBanner.empty();
+    bool updatePanel = false;
     static std::string s_joinIpDraft = kDefaultJoinHost;
+    static std::string s_updateUrlDraft;
+    std::atomic<bool> menuUpdateBusy{false};
+
     std::string ipBuf = s_joinIpDraft;
     bool decided = false;
 
-    constexpr int kPixW = 320;
-    constexpr int kPixH = 200;
+    constexpr int kPixW = 360;
+    constexpr int kPixH = 260;
     RenderTexture2D pix = LoadRenderTexture(kPixW, kPixH);
     SetTextureFilter(pix.texture, TEXTURE_FILTER_POINT);
 
-    const ::Color bg     { 18, 58, 38, 255 };
-    const ::Color ink    { 232, 248, 236, 255 };
-    const ::Color inkDim { 140, 188, 156, 255 };
-    const ::Color btn    { 44, 128, 82, 255 };
-    const ::Color btnHi  { 62, 158, 104, 255 };
-    const ::Color line   { 100, 200, 130, 255 };
+    const ::Color bg      { 24, 56, 40, 255 };
+    const ::Color bgInset { 18, 46, 32, 255 };
+    const ::Color ink     { 232, 248, 236, 255 };
+    const ::Color inkDim  { 130, 178, 152, 255 };
+    const ::Color inkMuted{ 95, 130, 112, 255 };
+    const ::Color btn     { 38, 118, 76, 255 };
+    const ::Color btnHi   { 54, 148, 98, 255 };
+    const ::Color line    { 108, 208, 138, 255 };
+    const ::Color accent  { 140, 235, 175, 255 };
+    const ::Color fieldBg { 12, 38, 26, 255 };
 
-    auto flatBtn = [&](int x, int y, int w, int h, const char* label, bool hot, int fs) {
-        DrawRectangle(x, y, w, h, hot ? btnHi : btn);
+    auto flatBtn = [&](int x, int y, int w, int h, const char* label, bool hot, bool enabled,
+                       int fs) {
+        const ::Color face = enabled ? (hot ? btnHi : btn) : ::Color{ 34, 74, 54, 255 };
+        const ::Color txt = enabled ? ink : inkMuted;
+        DrawRectangle(x, y, w, h, face);
         DrawRectangleLines(x, y, w, h, line);
+        if (enabled)
+            DrawRectangle(x + 1, y + 1, w - 2, 1, ::Color{ 255, 255, 255, 35 });
         const int lw = MeasureText(label, fs);
-        DrawText(label, x + (w - lw) / 2, y + (h - fs) / 2, fs, ink);
+        DrawText(label, x + (w - lw) / 2, y + (h - fs) / 2, fs, txt);
     };
 
     while (!WindowShouldClose() && !decided) {
@@ -668,46 +681,117 @@ MenuResult runMenu(std::string& joinFailHint) {
         BeginTextureMode(pix);
         ClearBackground(bg);
 
-        const int bw = 200;
+        DrawRectangle(1, 1, kPixW - 2, kPixH - 2, bgInset);
+        DrawRectangleLines(0, 0, kPixW, kPixH, line);
+
+        const int bw = 220;
         const int bx = (kPixW - bw) / 2;
-        const int bh = 26;
-        const int gap = 8;
+        const int bh = 28;
+        const int gap = 10;
 
-        if (!joinPanel) {
-            const char* title = "SLIMY JOURNEY";
-            const int ts = 22;
-            DrawText(title, (kPixW - MeasureText(title, ts)) / 2, 14, ts, ink);
+        const ::Color warnCol{ 255, 185, 165, 255 };
 
-            int y = 56;
-            Rectangle rSolo  { (float)bx, (float)y, (float)bw, (float)bh }; y += bh + gap;
-            Rectangle rOnline{ (float)bx, (float)y, (float)bw, (float)bh }; y += bh + gap;
-            Rectangle rQuit  { (float)bx, (float)y, (float)bw, (float)bh };
+        if (updatePanel) {
+            DrawText("MISE A JOUR", bx, 18, 16, accent);
+            DrawText("Manifeste (# slimy-manifest) ou exe direct (HTTPS).",
+                     bx, 38, 9, inkDim);
 
-            const bool hS = CheckCollisionPointRec(mp, rSolo);
-            const bool hO = CheckCollisionPointRec(mp, rOnline);
-            const bool hQ = CheckCollisionPointRec(mp, rQuit);
+            Rectangle urlBox{ (float)bx, 52.f, (float)bw, 26.f };
+            DrawRectangle((int)urlBox.x, (int)urlBox.y, (int)urlBox.width, (int)urlBox.height,
+                          fieldBg);
+            DrawRectangleLines((int)urlBox.x, (int)urlBox.y, (int)urlBox.width,
+                               (int)urlBox.height, line);
+            DrawText(s_updateUrlDraft.c_str(), (int)urlBox.x + 6, (int)urlBox.y + 7, 11, ink);
+            const int cx = (int)urlBox.x + 6 + MeasureText(s_updateUrlDraft.c_str(), 11);
+            if (((int)(GetTime() * 2.f) % 2) == 0)
+                DrawRectangle(cx, (int)urlBox.y + 5, 2, 13, ink);
 
-            flatBtn(bx, (int)rSolo.y,   bw, bh, "SOLO",   hS, 14);
-            flatBtn(bx, (int)rOnline.y, bw, bh, "ONLINE", hO, 14);
-            flatBtn(bx, (int)rQuit.y,   bw, bh, "QUIT",   hQ, 14);
-
-            if (click) {
-                if      (hS) { res.mode = MenuResult::Solo;   decided = true; }
-                else if (hO) { joinPanel = true; }
-                else if (hQ) { res.mode = MenuResult::Quit;   decided = true; }
+            int ch;
+            while ((ch = GetCharPressed()) != 0) {
+                if (s_updateUrlDraft.size() < 480 && ch >= 32 && ch < 127)
+                    s_updateUrlDraft.push_back((char)ch);
             }
-            if (IsKeyPressed(KEY_ESCAPE)) { res.mode = MenuResult::Quit; decided = true; }
-        } else {
-            DrawText("SERVER IP", bx, 40, 12, inkDim);
-            Rectangle ipBox{ (float)bx, 54.f, (float)bw, 24.f };
+            if (IsKeyPressed(KEY_BACKSPACE) && !s_updateUrlDraft.empty()) s_updateUrlDraft.pop_back();
+
+            const bool pasteHeld =
+                IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL) ||
+                IsKeyDown(KEY_LEFT_SUPER) || IsKeyDown(KEY_RIGHT_SUPER);
+            if (pasteHeld && IsKeyPressed(KEY_V)) {
+                const char* clip = GetClipboardText();
+                if (clip && clip[0]) {
+                    std::string pasted(clip);
+                    const size_t nl = pasted.find_first_of("\r\n");
+                    if (nl != std::string::npos) pasted.resize(nl);
+                    s_updateUrlDraft.clear();
+                    for (char c : pasted) {
+                        if (s_updateUrlDraft.size() >= 480) break;
+                        const unsigned char u = (unsigned char)c;
+                        if (u >= 32 && u < 127) s_updateUrlDraft.push_back(c);
+                    }
+                }
+            }
+
+#if !defined(_WIN32)
+            DrawText("Telechargement auto — Windows uniquement.", bx, 86, 10, warnCol);
+#endif
+
+            int y = 112;
+            Rectangle rGo{ (float)bx, (float)y, (float)bw, (float)bh }; y += bh + gap;
+            Rectangle rBk{ (float)bx, (float)y, (float)bw, (float)bh };
+
+            auto trimUrl = [](std::string s) {
+                while (!s.empty() && (s.back() == ' ' || s.back() == '\t')) s.pop_back();
+                size_t i = 0;
+                while (i < s.size() && (s[i] == ' ' || s[i] == '\t')) ++i;
+                return s.substr(i);
+            };
+            std::string urlTrim = trimUrl(s_updateUrlDraft);
+            const bool urlOk =
+                urlTrim.rfind("https://", 0) == 0 || urlTrim.rfind("http://", 0) == 0;
+#if defined(_WIN32)
+            const bool canGo = urlOk && !menuUpdateBusy.load();
+#else
+            const bool canGo = false;
+#endif
+
+            const bool hGo = CheckCollisionPointRec(mp, rGo);
+            const bool hBk = CheckCollisionPointRec(mp, rBk);
+            flatBtn(bx, (int)rGo.y, bw, bh, "TELECHARGER", hGo, canGo, 13);
+            flatBtn(bx, (int)rBk.y, bw, bh, "RETOUR", hBk, true, 13);
+
+            if (menuUpdateBusy.load()) {
+                DrawRectangle(0, 0, kPixW, kPixH, ::Color{ 8, 18, 12, 200 });
+                const char* msg = "Telechargement...";
+                DrawText(msg, (kPixW - MeasureText(msg, 14)) / 2, kPixH / 2 - 8, 14, accent);
+            }
+
+            if (click && !menuUpdateBusy.load()) {
+                if (hGo && canGo) {
+#if defined(_WIN32)
+                    std::string url = urlTrim;
+                    if (!menuUpdateBusy.exchange(true)) {
+                        std::thread([url, &menuUpdateBusy]() {
+                            pe::platform::downloadAndRestartFromUrl(url);
+                            menuUpdateBusy.store(false);
+                        }).detach();
+                    }
+#endif
+                } else if (hBk) updatePanel = false;
+            }
+            if (IsKeyPressed(KEY_ESCAPE)) updatePanel = false;
+        } else if (joinPanel) {
+            DrawText("SERVEUR", bx, 18, 16, accent);
+            DrawText("Adresse du hub (UDP)", bx, 38, 9, inkDim);
+
+            Rectangle ipBox{ (float)bx, 52.f, (float)bw, 26.f };
             DrawRectangle((int)ipBox.x, (int)ipBox.y, (int)ipBox.width, (int)ipBox.height,
-                          ::Color{ 12, 42, 28, 255 });
+                          fieldBg);
             DrawRectangleLines((int)ipBox.x, (int)ipBox.y, (int)ipBox.width, (int)ipBox.height,
                                line);
-            DrawText(ipBuf.c_str(), (int)ipBox.x + 6, (int)ipBox.y + 5, 13, ink);
-            const int cx = (int)ipBox.x + 6 + MeasureText(ipBuf.c_str(), 13);
+            DrawText(ipBuf.c_str(), (int)ipBox.x + 6, (int)ipBox.y + 7, 11, ink);
+            const int cx = (int)ipBox.x + 6 + MeasureText(ipBuf.c_str(), 11);
             if (((int)(GetTime() * 2.f) % 2) == 0)
-                DrawRectangle(cx, (int)ipBox.y + 4, 2, 14, ink);
+                DrawRectangle(cx, (int)ipBox.y + 5, 2, 13, ink);
 
             int ch;
             while ((ch = GetCharPressed()) != 0) {
@@ -725,8 +809,6 @@ MenuResult runMenu(std::string& joinFailHint) {
                     std::string pasted(clip);
                     const size_t nl = pasted.find_first_of("\r\n");
                     if (nl != std::string::npos) pasted.resize(nl);
-                    while (!pasted.empty() && pasted.front() == ' ') pasted.erase(pasted.begin());
-                    while (!pasted.empty() && pasted.back() == ' ') pasted.pop_back();
                     ipBuf.clear();
                     for (char c : pasted) {
                         if (ipBuf.size() >= 60) break;
@@ -736,18 +818,17 @@ MenuResult runMenu(std::string& joinFailHint) {
                 }
             }
 
-            const ::Color warnCol{ 255, 185, 165, 255 };
-            int eyDraw = 80;
+            int eyDraw = 88;
             if (!errBanner.empty()) {
-                const int errFs = 7;
+                const int errFs = 8;
                 size_t a = 0;
                 int nlines = 0;
-                while (a <= errBanner.size() && nlines < 5) {
+                while (a <= errBanner.size() && nlines < 6) {
                     size_t b = errBanner.find('\n', a);
                     if (b == std::string::npos) b = errBanner.size();
                     std::string errLine = errBanner.substr(a, b - a);
                     if (!errLine.empty())
-                        DrawText(errLine.c_str(), 10, eyDraw, errFs, warnCol);
+                        DrawText(errLine.c_str(), bx, eyDraw, errFs, warnCol);
                     eyDraw += errFs + 2;
                     ++nlines;
                     if (b >= errBanner.size()) break;
@@ -755,14 +836,14 @@ MenuResult runMenu(std::string& joinFailHint) {
                 }
             }
 
-            int y = std::max(90, eyDraw + 4);
+            int y = std::max(118, eyDraw + 6);
             Rectangle rOk{ (float)bx, (float)y, (float)bw, (float)bh }; y += bh + gap;
             Rectangle rBk{ (float)bx, (float)y, (float)bw, (float)bh };
 
             const bool hOk = CheckCollisionPointRec(mp, rOk);
             const bool hBk = CheckCollisionPointRec(mp, rBk);
-            flatBtn(bx, (int)rOk.y, bw, bh, "CONNECT", hOk, 13);
-            flatBtn(bx, (int)rBk.y, bw, bh, "BACK", hBk, 13);
+            flatBtn(bx, (int)rOk.y, bw, bh, "CONNECTER", hOk, true, 13);
+            flatBtn(bx, (int)rBk.y, bw, bh, "RETOUR", hBk, true, 13);
 
             if (click) {
                 if (hOk && !ipBuf.empty()) {
@@ -779,10 +860,59 @@ MenuResult runMenu(std::string& joinFailHint) {
                 decided = true;
             }
             if (IsKeyPressed(KEY_ESCAPE)) joinPanel = false;
+        } else {
+            const char* title = "SLIMY JOURNEY";
+            const int ts = 24;
+            DrawText(title, (kPixW - MeasureText(title, ts)) / 2, 16, ts, ink);
+            char ver[48];
+            std::snprintf(ver, sizeof(ver), "build %u", (unsigned)net::kClientBuild);
+            DrawText(ver, (kPixW - MeasureText(ver, 10)) / 2, 44, 10, inkMuted);
+
+            int y = 68;
+            Rectangle rSolo  { (float)bx, (float)y, (float)bw, (float)bh }; y += bh + gap;
+            Rectangle rOnline{ (float)bx, (float)y, (float)bw, (float)bh }; y += bh + gap;
+            Rectangle rUpdate{ (float)bx, (float)y, (float)bw, (float)bh }; y += bh + gap;
+            Rectangle rQuit  { (float)bx, (float)y, (float)bw, (float)bh };
+
+            const bool hS = CheckCollisionPointRec(mp, rSolo);
+            const bool hO = CheckCollisionPointRec(mp, rOnline);
+            const bool hU = CheckCollisionPointRec(mp, rUpdate);
+            const bool hQ = CheckCollisionPointRec(mp, rQuit);
+
+            flatBtn(bx, (int)rSolo.y,   bw, bh, "SOLO",    hS, true, 14);
+            flatBtn(bx, (int)rOnline.y, bw, bh, "EN LIGNE", hO, true, 14);
+            flatBtn(bx, (int)rUpdate.y, bw, bh, "MISE A JOUR", hU, true, 14);
+            flatBtn(bx, (int)rQuit.y,   bw, bh, "QUITTER", hQ, true, 14);
+
+            if (click) {
+                if (hS) {
+                    res.mode = MenuResult::Solo;
+                    decided = true;
+                } else if (hO)
+                    joinPanel = true;
+                else if (hU)
+                    updatePanel = true;
+                else if (hQ) {
+                    res.mode = MenuResult::Quit;
+                    decided = true;
+                }
+            }
+            if (IsKeyPressed(KEY_ESCAPE)) {
+                res.mode = MenuResult::Quit;
+                decided = true;
+            }
         }
 
-        const char* hint = joinPanel ? "ESC retour   Ctrl+V coller" : "port 6543";
-        DrawText(hint, (kPixW - MeasureText(hint, 9)) / 2, kPixH - 14, 9, inkDim);
+        char footer[96];
+        if (updatePanel)
+            std::snprintf(footer, sizeof(footer), "Ctrl+V coller · ESC retour");
+        else if (joinPanel)
+            std::snprintf(footer, sizeof(footer), "port %u · ESC retour · Ctrl+V coller",
+                          (unsigned)net::kDefaultPort);
+        else
+            std::snprintf(footer, sizeof(footer), "UDP %u · ESC quitter",
+                          (unsigned)net::kDefaultPort);
+        DrawText(footer, (kPixW - MeasureText(footer, 9)) / 2, kPixH - 16, 9, inkMuted);
 
         EndTextureMode();
 
@@ -806,7 +936,7 @@ int main(int argc, char** argv) {
                       std::strcmp(argv[1], "-h") == 0)) {
         std::printf(
             "SlimyJourney (client)\n"
-            "  (no args)              launch menu (Solo / Online)\n"
+            "  (no args)              launch menu (Solo / En ligne / Mise à jour)\n"
             "  --client [host] [port] connect to a server hub directly\n"
             "  --solo                 skip menu, go straight to solo game\n"
             "Map editor + fichier maps/default.sjmap (F6 = defaut du jeu)\n"
