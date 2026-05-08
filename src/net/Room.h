@@ -8,6 +8,7 @@
 #include <chrono>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 struct _ENetHost;
 struct _ENetPeer;
@@ -84,6 +85,8 @@ private:
     float accumulator_ = 0.f;
     clock::time_point lastEmptyStamp_{clock::now()};
     clock::time_point nextSnap_{clock::now()};
+    /// Reused each broadcast to avoid per-frame heap churn under load.
+    std::vector<uint8_t> snapScratch_;
 };
 
 } // namespace pe::net

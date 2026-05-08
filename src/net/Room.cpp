@@ -21,6 +21,7 @@ Room::Room(uint32_t id, std::string name)
     buildScene(world_);
     lastEmptyStamp_ = clock::now();
     nextSnap_ = clock::now();
+    snapScratch_.reserve(24576);
 }
 
 int Room::playerCount() const {
@@ -149,7 +150,8 @@ void Room::broadcastSnapshot(_ENetHost* host) {
 
     auto now = clock::now();
     if (now < nextSnap_) return;
-    nextSnap_ = now + std::chrono::milliseconds(16);
+    // ~30 Hz — 60 Hz × large UDP payloads tends to fragment / backlog queues on small VPS links.
+    nextSnap_ = now + std::chrono::milliseconds(33);
 
     std::vector<const SoftBody*> playerBlobs(kMaxPlayers, nullptr);
     for (int i = 0; i < kMaxPlayers; ++i) {
@@ -171,8 +173,8 @@ void Room::broadcastSnapshot(_ENetHost* host) {
     for (int receiver = 0; receiver < kMaxPlayers; ++receiver) {
         if (!slots_[(size_t)receiver].active) continue;
 
-        std::vector<uint8_t> buf;
-        buf.reserve(8192);
+        snapScratch_.clear();
+        std::vector<uint8_t>& buf = snapScratch_;
         ServerSnapshotMsg snap{};
         snap.hdr.type = (uint8_t)MsgType::ServerSnapshot;
         snap.frame = frame_;
@@ -232,7 +234,7 @@ void Room::broadcastSnapshot(_ENetHost* host) {
             uint16_t nTrail = 0;
             if (s.slimeAlive) {
                 const auto& pv = slimes_[(size_t)i].puddles();
-                constexpr uint16_t kMaxTrail = 36;
+                constexpr uint16_t kMaxTrail = 24;
                 const size_t start =
                     pv.size() > (size_t)kMaxTrail ? pv.size() - (size_t)kMaxTrail : 0;
                 nTrail = (uint16_t)(pv.size() - start);
