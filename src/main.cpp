@@ -92,11 +92,19 @@ int runSinglePlayer() {
             else { returnToMenu = true; break; }
         }
 
-        if (!chatOpen && IsKeyPressed(KEY_T)) chatOpen = true;
+        const bool openingChatWithT = !chatOpen && IsKeyPressed(KEY_T);
+        if (openingChatWithT) chatOpen = true;
 
         if (chatOpen) {
+            bool skipDuplicateHotkeyT = openingChatWithT;
             int cp = GetCharPressed();
             while (cp > 0) {
+                if (skipDuplicateHotkeyT && cp == 116) { // 't' same frame as KEY_T
+                    skipDuplicateHotkeyT = false;
+                    cp = GetCharPressed();
+                    continue;
+                }
+                skipDuplicateHotkeyT = false;
                 int nbytes = 0;
                 const char* enc = CodepointToUTF8(cp, &nbytes);
                 if (enc && nbytes > 0 &&
@@ -450,11 +458,19 @@ bool runOnlineSession(const std::string& host, uint16_t port, std::string& errOu
         }
 
         // T opens chat only when closed — typing "t" must not toggle the panel off.
-        if (!chatOpen && IsKeyPressed(KEY_T)) chatOpen = true;
+        const bool openingChatWithT = !chatOpen && IsKeyPressed(KEY_T);
+        if (openingChatWithT) chatOpen = true;
 
         if (chatOpen) {
+            bool skipDuplicateHotkeyT = openingChatWithT;
             int cp = GetCharPressed();
             while (cp > 0) {
+                if (skipDuplicateHotkeyT && cp == 116) {
+                    skipDuplicateHotkeyT = false;
+                    cp = GetCharPressed();
+                    continue;
+                }
+                skipDuplicateHotkeyT = false;
                 int nbytes = 0;
                 const char* enc = CodepointToUTF8(cp, &nbytes);
                 if (enc && nbytes > 0 &&
