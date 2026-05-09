@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstring>
 #include <thread>
+#include <unordered_map>
 #include <unordered_set>
 
 namespace pe::net {
@@ -24,12 +25,8 @@ float lerpAngleRad(float a, float b, float w) {
     return a + d * w;
 }
 
-const RemoteSlime* findSlimeByKey(const std::vector<RemoteSlime>& v, uint32_t ownerId,
-                                  uint8_t fragmentId) {
-    for (const auto& s : v) {
-        if (s.ownerId == ownerId && s.fragmentId == fragmentId) return &s;
-    }
-    return nullptr;
+uint64_t slimeInterpKey(uint32_t ownerId, uint8_t fragmentId) {
+    return (uint64_t)ownerId << 32 | (uint64_t)fragmentId;
 }
 
 const RigidNetSample* findRigidById(const std::vector<RigidNetSample>& v, uint32_t id) {
@@ -406,10 +403,17 @@ void Client::advanceInterpolation() {
     float alpha = std::chrono::duration<float>(now - snapT0_).count() / span;
     alpha = std::clamp(alpha, 0.f, 1.f);
 
+    std::unordered_map<uint64_t, const RemoteSlime*> prevByKey;
+    prevByKey.reserve(slimesPrev_.size() * 2 + 8);
+    for (const auto& s : slimesPrev_)
+        prevByKey.emplace(slimeInterpKey(s.ownerId, s.fragmentId), &s);
+
     slimesDisplay_.clear();
     slimesDisplay_.reserve(slimesCurr_.size());
     for (const auto& curr : slimesCurr_) {
-        const RemoteSlime* prev = findSlimeByKey(slimesPrev_, curr.ownerId, curr.fragmentId);
+        const RemoteSlime* prev = nullptr;
+        auto pit = prevByKey.find(slimeInterpKey(curr.ownerId, curr.fragmentId));
+        if (pit != prevByKey.end()) prev = pit->second;
         if (prev) slimesDisplay_.push_back(blendSlime(*prev, curr, alpha));
         else slimesDisplay_.push_back(curr);
     }

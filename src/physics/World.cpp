@@ -1,5 +1,7 @@
 #include "physics/World.h"
+#include "net/Protocol.h"
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <deque>
@@ -572,17 +574,51 @@ inline void resolveSoftPair(SoftBody& X, SoftBody& Y, float restitution, float f
 /// (no energy pumping). Replaces the old COM-shove model.
 void resolvePlayerSlimesMutualRepulsion(std::vector<std::unique_ptr<SoftBody>>& softBodies) {
     const size_t n = softBodies.size();
+
+    constexpr int   kPasses    = 3;
+    constexpr float kPairRest  = 0.12f;
+    constexpr float kPairFric  = 0.55f;
+
+#ifdef PE_HEADLESS_SERVER
+    // Dedicated server: only resolve **across** player slots. Same-slot fragments share one tag;
+    // doing all-pairs was O(totalFragments²) and melted CPU after splits.
+    std::array<std::vector<size_t>, pe::net::kMaxPlayers> bySlot{};
+    for (size_t idx = 0; idx < n; ++idx) {
+        const int t = softBodies[idx]->tag;
+        if (!isNetworkedPlayerSlimeTag(t)) continue;
+        const int slot = (t - 1) / 100;
+        if (slot >= 0 && slot < pe::net::kMaxPlayers)
+            bySlot[(size_t)slot].push_back(idx);
+    }
+    int activeSlots = 0;
+    for (auto& v : bySlot)
+        if (!v.empty()) ++activeSlots;
+    if (activeSlots < 2) return;
+
+    for (int pass = 0; pass < kPasses; ++pass) {
+        for (int sa = 0; sa < pe::net::kMaxPlayers; ++sa) {
+            if (bySlot[(size_t)sa].empty()) continue;
+            for (int sb = sa + 1; sb < pe::net::kMaxPlayers; ++sb) {
+                if (bySlot[(size_t)sb].empty()) continue;
+                for (size_t ia : bySlot[(size_t)sa]) {
+                    SoftBody& A = *softBodies[ia];
+                    for (size_t ib : bySlot[(size_t)sb]) {
+                        SoftBody& B = *softBodies[ib];
+                        if (!A.aabb().overlaps(B.aabb())) continue;
+                        resolveSoftPair(A, B, kPairRest, kPairFric);
+                        resolveSoftPair(B, A, kPairRest, kPairFric);
+                    }
+                }
+            }
+        }
+    }
+#else
     int nPlayer = 0;
     for (size_t idx = 0; idx < n; ++idx) {
         if (isNetworkedPlayerSlimeTag(softBodies[idx]->tag))
             ++nPlayer;
     }
-    if (nPlayer < 2)
-        return;
-
-    constexpr int   kPasses    = 3;
-    constexpr float kPairRest  = 0.12f;
-    constexpr float kPairFric  = 0.55f;
+    if (nPlayer < 2) return;
 
     for (int pass = 0; pass < kPasses; ++pass) {
         for (size_t i = 0; i < n; ++i) {
@@ -591,18 +627,13 @@ void resolvePlayerSlimesMutualRepulsion(std::vector<std::unique_ptr<SoftBody>>& 
             for (size_t j = i + 1; j < n; ++j) {
                 SoftBody& B = *softBodies[j];
                 if (!isNetworkedPlayerSlimeTag(B.tag)) continue;
-#ifdef PE_HEADLESS_SERVER
-                // Dedicated server: fragments of one player share a tag — pairwise soft-soft
-                // resolution scales O(fragments²) per player and dominates CPU after splits.
-                // Cross-player separation still runs (different tags).
-                if (A.tag == B.tag) continue;
-#endif
                 if (!A.aabb().overlaps(B.aabb())) continue;
                 resolveSoftPair(A, B, kPairRest, kPairFric);
                 resolveSoftPair(B, A, kPairRest, kPairFric);
             }
         }
     }
+#endif
 }
 
 } // namespace
@@ -928,7 +959,7 @@ void World::step(float dt) {
 
     // Stiff mass-springs need smaller dt than the rigid solver — sub-step soft integration.
 #ifdef PE_HEADLESS_SERVER
-    const int softSubsteps = 6;
+    const int softSubsteps = 4;
 #else
     const int softSubsteps = 10;
 #endif
@@ -939,7 +970,11 @@ void World::step(float dt) {
             sb->integrate(softH);
         }
         for (auto& sb : softBodies_) {
+#ifdef PE_HEADLESS_SERVER
+            for (int it = 0; it < 4; ++it)
+#else
             for (int it = 0; it < 8; ++it)
+#endif
                 sb->resolveCollisions(rigids);
         }
 #ifdef PE_HEADLESS_SERVER

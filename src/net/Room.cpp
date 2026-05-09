@@ -23,8 +23,8 @@ Room::Room(uint32_t id, std::string name, int maxPlayers, uint8_t optionsFlags)
       optionsFlags_(optionsFlags) {
     world_.gravity = {0.f, 22.f};
 #ifdef PE_HEADLESS_SERVER
-    world_.velocityIterations = 18;
-    world_.positionIterations = 7;
+    world_.velocityIterations = 14;
+    world_.positionIterations = 6;
 #endif
     buildScene(world_);
     lastEmptyStamp_ = clock::now();
@@ -106,6 +106,11 @@ void Room::setInput(int slot, Vec2 aim, bool jump, bool merge, bool grab, bool r
 void Room::tick(float elapsedSec) {
     if (elapsedSec > 0.05f) elapsedSec = 0.05f;
 
+    if (playerCount() == 0) {
+        accumulator_ = 0.f;
+        return;
+    }
+
     for (int i = 0; i < kMaxPlayers; ++i) {
         Slot& s = slots_[(size_t)i];
         if (!s.active || !s.slimeAlive) {
@@ -183,7 +188,7 @@ void Room::broadcastSnapshot(_ENetHost* host) {
     // Headless dedicated server: slightly lower rate — large snapshots × many peers saturates
     // low-core VPS and ENet outgoing queues.
 #ifdef PE_HEADLESS_SERVER
-    nextSnap_ = now + std::chrono::milliseconds(45);
+    nextSnap_ = now + std::chrono::milliseconds(58);
 #else
     nextSnap_ = now + std::chrono::milliseconds(33);
 #endif
@@ -250,6 +255,15 @@ void Room::broadcastSnapshot(_ENetHost* host) {
             payload.vy = vel.y;
 
             const int n = (int)sb->points.size();
+#ifdef PE_HEADLESS_SERVER
+            constexpr int kWireVertsMax = 14;
+            int stride = 1;
+            while ((n + stride - 1) / stride > kWireVertsMax)
+                ++stride;
+            const int netN = (n + stride - 1) / stride;
+#else
+            const int netN = n;
+#endif
             const int rIdx = std::max(1, n / 8);
             const int lIdx = ((3 * n) / 8) % n;
             Vec2 lTarget = c + (sb->points[(size_t)lIdx].pos - c) * 0.55f;
@@ -270,7 +284,7 @@ void Room::broadcastSnapshot(_ENetHost* host) {
                 payload.isCharging = (uint8_t)(s.jumpHeld ? 1 : 0);
             }
             payload.isLocal = 0;
-            payload.numPoints = (uint16_t)n;
+            payload.numPoints = (uint16_t)netN;
             payload.embeddedSpikeCount = 0;
             payload.fragmentInfo = (uint8_t)fragIndex;
             if (isPrimary) payload.fragmentInfo |= kSlimeFragmentPrimaryBit;
@@ -284,13 +298,21 @@ void Room::broadcastSnapshot(_ENetHost* host) {
             std::memcpy(buf.data() + off, &payload, sizeof(payload));
             snapIsLocalPatches_.emplace_back(off + offsetof(SlimeStatePayload, isLocal), i);
 
+#ifdef PE_HEADLESS_SERVER
+            for (int pi = 0; pi < n; pi += stride) {
+                float xy[2] = {sb->points[(size_t)pi].pos.x, sb->points[(size_t)pi].pos.y};
+                size_t po = buf.size();
+                buf.resize(po + sizeof(xy));
+                std::memcpy(buf.data() + po, xy, sizeof(xy));
+            }
+#else
             for (auto& p : sb->points) {
                 float xy[2] = {p.pos.x, p.pos.y};
                 size_t po = buf.size();
                 buf.resize(po + sizeof(xy));
                 std::memcpy(buf.data() + po, xy, sizeof(xy));
             }
-
+#endif
             uint16_t nTrail = 0;
             if (s.slimeAlive && isPrimary) {
                 const auto& pv = slimes_[(size_t)i].puddles();

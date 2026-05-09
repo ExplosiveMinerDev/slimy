@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <numeric>
+#include <vector>
 
 namespace pe {
 
@@ -102,10 +103,16 @@ float SoftBody::area() const {
 float SoftBody::convexHullArea() const {
     const int m = (int)points.size();
     if (m < 3) return 1e-4f;
-    std::vector<Vec2> pts((size_t)m);
+    // Hot path: called every physics sub-step per blob — heap allocations here caused
+    // severe allocator slowdown after minutes of multiplayer server runtime.
+    thread_local std::vector<Vec2> pts;
+    thread_local std::vector<int> ord;
+    thread_local std::vector<int> lower;
+    thread_local std::vector<int> upper;
+    pts.resize((size_t)m);
     for (int i = 0; i < m; ++i) pts[(size_t)i] = points[(size_t)i].pos;
 
-    std::vector<int> ord((size_t)m);
+    ord.resize((size_t)m);
     std::iota(ord.begin(), ord.end(), 0);
     std::sort(ord.begin(), ord.end(), [&](int a, int b) {
         return pts[(size_t)a].x < pts[(size_t)b].x ||
@@ -116,14 +123,14 @@ float SoftBody::convexHullArea() const {
         return cross(pts[(size_t)a] - pts[(size_t)o], pts[(size_t)b] - pts[(size_t)o]);
     };
 
-    std::vector<int> lower;
+    lower.clear();
     for (int idx : ord) {
         while ((int)lower.size() >= 2 &&
                orient(lower[(size_t)lower.size() - 2], lower.back(), idx) <= 0)
             lower.pop_back();
         lower.push_back(idx);
     }
-    std::vector<int> upper;
+    upper.clear();
     for (int i = m - 1; i >= 0; --i) {
         int idx = ord[(size_t)i];
         while ((int)upper.size() >= 2 &&

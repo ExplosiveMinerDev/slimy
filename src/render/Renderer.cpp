@@ -558,7 +558,8 @@ void Renderer::drawRemoteSlimeBody(const std::vector<Vec2>& worldPoints, bool is
     Vec2 cs = worldToScreen(c);
     int cx = iround(cs.x), cy = iround(cs.y);
 
-    std::vector<Vector2> poly;
+    thread_local std::vector<Vector2> poly;
+    poly.clear();
     poly.reserve((size_t)n);
     for (auto& p : worldPoints) {
         Vec2 sp = worldToScreen(p);
