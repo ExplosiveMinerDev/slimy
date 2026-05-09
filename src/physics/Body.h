@@ -46,6 +46,8 @@ struct Body {
 
     // user data
     int tag = 0;
+    /// Scripted movers (doors): skip gravity / velocity integration — position set each tick after physics.
+    bool kinematic = false;
     /// Cleared each physics tick before `Slime::update`; while held, set to that slime's `myTag()`.
     int grabOwnerTag = 0;
     /// After a slime throw: brief low-bounce / high-friction contacts (seconds, decayed in `World::step`).

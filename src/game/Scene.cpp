@@ -3,10 +3,12 @@
 #include "game/Slime.h"
 #include "physics/Body.h"
 #include "physics/World.h"
+#include "physics/SoftBody.h"
 
 #include <cmath>
 #include <cstdio>
 #include <fstream>
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -17,14 +19,8 @@ void appendSolidMapEntries(World& world, const std::vector<SolidMapEntry>& entri
 namespace {
 
 constexpr Vec2 kSpawnPoints[net::kMaxPlayers] = {
-    {-12.f,  8.7f},
-    { 12.f,  8.7f},
-    {  0.f,  3.0f},
-    {-22.f,  8.7f},
-    { 22.f,  8.7f},
-    {-30.f,  8.7f},
-    { 30.f,  8.7f},
-    {  0.f,  8.7f},
+    {-42.8f, 10.05f}, {-41.4f, 10.05f}, {-40.1f, 10.05f}, {-42.5f, 9.45f},
+    {-41.0f, 9.45f}, {-39.7f, 9.45f}, {-43.0f, 8.85f}, {-39.5f, 8.85f},
 };
 
 /// True if a static AABB box already exists (same centre / half extents / tag) — avoids
@@ -134,6 +130,38 @@ void buildSceneCore(World& world) {
     const float kStoneUnderCy = kGrassBottomY + kStoneUnderHalfH;
     addStatic(Shape::box(40.f, kStoneUnderHalfH), {0.f, kStoneUnderCy}, Slime::stoneTag);
 
+    // === Left edge: floor continuation + small starter room (door + 2 pressure plates) ===
+    addStatic(Shape::box(3.f, 0.6f), {-43.f, 10.5f}, Slime::grassTag);
+    addStatic(Shape::box(0.38f, 2.9f), {-45.78f, 11.35f}, Slime::stoneTag);
+    addStatic(Shape::box(5.4f, 0.22f), {-41.4f, 12.85f}, Slime::stoneTag);
+    addStatic(Shape::box(0.42f, 2.45f), {-38.48f, 11.15f}, Slime::stoneTag);
+    addStatic(Shape::box(0.42f, 2.45f), {-37.05f, 11.15f}, Slime::stoneTag);
+    addStatic(Shape::box(1.55f, 0.22f), {-37.75f, 12.48f}, Slime::stoneTag);
+
+    auto mkKinematic = [](Body* b) {
+        b->kinematic = true;
+        b->invMass = 0.f;
+        b->invInertia = 0.f;
+    };
+    // Door + plates must be Dynamic so snapshots replicate positions online.
+    {
+        Body* door =
+            addDynamic(Shape::box(0.14f, 1.22f), {-37.68f, 10.92f}, Slime::doorRoomDoorTag, 800.f);
+        door->friction = 0.88f;
+        door->restitution = 0.02f;
+        mkKinematic(door);
+        Body* outer =
+            addDynamic(Shape::box(0.52f, 0.07f), {-36.62f, 9.97f}, Slime::pressurePlateDoorOuterTag,
+                       120.f);
+        outer->friction = 0.95f;
+        mkKinematic(outer);
+        Body* inner =
+            addDynamic(Shape::box(0.52f, 0.07f), {-41.05f, 9.97f}, Slime::pressurePlateDoorHoldTag,
+                       120.f);
+        inner->friction = 0.95f;
+        mkKinematic(inner);
+    }
+
     // === Floating wooden platforms ===
     addStatic(Shape::box(2.6f, 0.30f), {-18.f, 6.6f}, Slime::platformTag);
     addStatic(Shape::box(2.6f, 0.30f), {  0.f, 4.5f}, Slime::platformTag);
@@ -240,6 +268,76 @@ void buildSceneCore(World& world) {
 void buildScene(World& world) {
     buildSceneCore(world);
     tryAppendDefaultSolidMap(world);
+}
+
+namespace {
+
+AABB plateSensorZone(const Body& plate) {
+    AABB z = plate.aabb();
+    z.min.x -= 0.18f;
+    z.max.x += 0.18f;
+    z.min.y -= 0.08f;
+    z.max.y += 1.05f;
+    return z;
+}
+
+bool anyPlayerBlobInZone(World& world, const AABB& zone) {
+    for (const auto& sb : world.softBodies()) {
+        if (!isPlayerSlimeSoftBodyTag(sb->tag)) continue;
+        for (const auto& pt : sb->points) {
+            if (zone.contains(pt.pos)) return true;
+        }
+    }
+    return false;
+}
+
+} // namespace
+
+void updateDoorRoom(World& world, float dt) {
+    Body* door = nullptr;
+    Body* outer = nullptr;
+    Body* inner = nullptr;
+    for (auto& bp : world.bodies()) {
+        Body& B = *bp;
+        if (B.tag == Slime::doorRoomDoorTag) door = &B;
+        else if (B.tag == Slime::pressurePlateDoorOuterTag) outer = &B;
+        else if (B.tag == Slime::pressurePlateDoorHoldTag) inner = &B;
+    }
+    if (!door || !outer || !inner) return;
+
+    static bool inited = false;
+    static float yDoorClosed, yOuter0, yInner0;
+    if (!inited) {
+        yDoorClosed = door->pos.y;
+        yOuter0 = outer->pos.y;
+        yInner0 = inner->pos.y;
+        inited = true;
+    }
+
+    constexpr float kDrop = 0.11f;
+    constexpr float kDoorLift = 2.15f;
+    const float yDoorOpen = yDoorClosed - kDoorLift;
+
+    const bool onOuter = anyPlayerBlobInZone(world, plateSensorZone(*outer));
+    const bool onInner = anyPlayerBlobInZone(world, plateSensorZone(*inner));
+    const bool doorOpen = onOuter || onInner;
+
+    const float outerTarget = yOuter0 - (onOuter ? kDrop : 0.f);
+    const float innerTarget = yInner0 - (onInner ? kDrop : 0.f);
+    const float doorTarget = doorOpen ? yDoorOpen : yDoorClosed;
+
+    const float kPlate = std::min(1.f, dt * 18.f);
+    const float kDoor = std::min(1.f, dt * 12.f);
+    outer->pos.y += (outerTarget - outer->pos.y) * kPlate;
+    inner->pos.y += (innerTarget - inner->pos.y) * kPlate;
+    door->pos.y += (doorTarget - door->pos.y) * kDoor;
+
+    outer->vel = {};
+    inner->vel = {};
+    door->vel = {};
+    outer->angVel = 0.f;
+    inner->angVel = 0.f;
+    door->angVel = 0.f;
 }
 
 } // namespace pe

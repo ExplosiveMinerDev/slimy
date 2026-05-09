@@ -230,6 +230,7 @@ int runSinglePlayer(bool reuseWindow = false) {
             slime.update(fixedDt, world, mouseWorld, jumpHeld, grabHeld, gatherHeld,
                          doSplitThisStep);
             world.step(fixedDt);
+            updateDoorRoom(world, fixedDt);
             world.tryBinarySplitDamagedBlob(slime.myTag());
             accumulator -= fixedDt;
             ++steps;
@@ -872,8 +873,7 @@ MenuResult runMenu(std::string& joinFailHint) {
             const int ts = 24;
             DrawText(title, (kPixW - MeasureText(title, ts)) / 2, 16, ts, ink);
             char ver[32];
-            std::snprintf(ver, sizeof(ver), "build 1.%02u",
-                          (unsigned)net::kClientBuild);
+            std::snprintf(ver, sizeof(ver), "v1.%02u", (unsigned)net::kClientBuild);
             DrawText(ver, (kPixW - MeasureText(ver, 10)) / 2, 44, 10, inkMuted);
 
             int y = 68;

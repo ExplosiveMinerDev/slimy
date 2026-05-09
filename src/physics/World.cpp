@@ -1106,6 +1106,7 @@ void World::processSoftBodyConnectivity() {
 void World::integrateVelocities(float dt) {
     for (auto& b : bodies_) {
         if (b->type != BodyType::Dynamic) continue;
+        if (b->kinematic) continue;
         b->vel += (gravity + b->force * b->invMass) * dt;
         b->angVel += b->torque * b->invInertia * dt;
         b->vel *= (1.f - b->linearDamping * dt);
@@ -1118,6 +1119,7 @@ void World::integrateVelocities(float dt) {
 void World::integratePositions(float dt) {
     for (auto& b : bodies_) {
         if (b->type != BodyType::Dynamic) continue;
+        if (b->kinematic) continue;
         b->pos += b->vel * dt;
         b->rot += b->angVel * dt;
     }

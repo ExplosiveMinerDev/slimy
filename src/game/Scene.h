@@ -16,6 +16,9 @@ void appendSolidMapEntries(World& world, const std::vector<SolidMapEntry>& entri
 /// (les boîtes déjà présentes dans le core sont ignorées pour éviter les doublons).
 void buildScene(World& world);
 
+/// Pressure-plate door room (left edge): run after each `World::step` on authoritative sim only.
+void updateDoorRoom(World& world, float dt);
+
 /// Spawn position for a given player slot (0..net::kMaxPlayers-1). Out-of-range
 /// inputs wrap into the table.
 Vec2 spawnPosForSlot(int slot);

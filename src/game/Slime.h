@@ -37,6 +37,10 @@ public:
     /// Solides décor / tests carte (ex. caillou rouge dans default.sjmap).
     static constexpr int mapTestRockTag = 8;
     static constexpr int airVentTag = 9;
+    /// Door room (left map): kinematic door + outer / inner hold-open plates.
+    static constexpr int doorRoomDoorTag = 13;
+    static constexpr int pressurePlateDoorOuterTag = 14;
+    static constexpr int pressurePlateDoorHoldTag = 15;
 
     /// Launch velocity magnitudes (world units / s) — applied along the aim direction.
     /// (Tuned at ~80% of the original feel — momentum reduced by 20%.)

@@ -286,6 +286,17 @@ BodyStyle styleForBody(const Body& b) {
         s.outline = {26, 34, 42, 255};
         s.accent = {142, 226, 232, 255};
         s.deep = {46, 58, 68, 255};
+    } else if (b.tag == Slime::doorRoomDoorTag) {
+        s.fill = {118, 122, 138, 255};
+        s.outline = {42, 46, 58, 255};
+        s.accent = {210, 215, 235, 255};
+        s.deep = {72, 76, 94, 255};
+    } else if (b.tag == Slime::pressurePlateDoorOuterTag ||
+               b.tag == Slime::pressurePlateDoorHoldTag) {
+        s.fill = {92, 72, 58, 255};
+        s.outline = {36, 26, 18, 255};
+        s.accent = {220, 175, 118, 255};
+        s.deep = {58, 46, 38, 255};
     } else if (b.type == BodyType::Static) {
         s.fill = {84, 88, 108, 255};
         s.outline = {30, 32, 44, 255};

@@ -64,6 +64,9 @@ struct AABB {
     }
     Vec2 center() const { return (min + max) * 0.5f; }
     Vec2 size() const { return max - min; }
+    bool contains(const Vec2& p) const {
+        return p.x >= min.x && p.x <= max.x && p.y >= min.y && p.y <= max.y;
+    }
 };
 
 inline float clamp(float v, float lo, float hi) { return std::max(lo, std::min(hi, v)); }

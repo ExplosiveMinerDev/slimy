@@ -366,6 +366,7 @@ int main() {
                 slime.update(kFixedDt, world, mouseWorld, jumpHeld, grabHeld, gatherHeld,
                              doSplitThisStep);
                 world.step(kFixedDt);
+                pe::updateDoorRoom(world, kFixedDt);
                 world.tryBinarySplitDamagedBlob(slime.myTag());
                 accum -= kFixedDt;
                 ++steps;

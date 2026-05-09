@@ -169,6 +169,7 @@ void Room::tick(float elapsedSec) {
                                       doSplitThisStep);
         }
         world_.step(fixedDt);
+        pe::updateDoorRoom(world_, fixedDt);
         for (int i = 0; i < kMaxPlayers; ++i) {
             if (!slots_[(size_t)i].active || !slots_[(size_t)i].slimeAlive) continue;
             world_.tryBinarySplitDamagedBlob(Slime::networkedPlayerBlobTag(i));
