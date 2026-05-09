@@ -124,6 +124,7 @@ int main() {
 
     float accum = 0.f;
     bool pendingShiftSplit = false;
+    bool prevShiftSplitDown = false;
     float enterHoldTest = 0.f;
     bool enterMergeLatchTest = false;
 
@@ -325,8 +326,10 @@ int main() {
             bool jumpHeld =
                 (IsKeyDown(KEY_SPACE) ||
                  (IsMouseButtonDown(MOUSE_BUTTON_LEFT) && !shiftDown));
-            const bool shiftSplitClick =
-                shiftDown && IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
+            const bool shiftSplitDown =
+                shiftDown && IsMouseButtonDown(MOUSE_BUTTON_LEFT);
+            const bool shiftSplitClick = shiftSplitDown && !prevShiftSplitDown;
+            prevShiftSplitDown = shiftSplitDown;
             if (shiftSplitClick) pendingShiftSplit = true;
             const bool grabHeld = IsKeyDown(KEY_E);
 

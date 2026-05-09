@@ -92,6 +92,7 @@ int runSinglePlayer(bool reuseWindow = false) {
     const float fixedDt = 1.f / 120.f;
     float accumulator = 0.f;
     bool pendingShiftSplit = false;
+    bool prevShiftSplitDown = false;
     Vec2 panStart{0, 0};
     bool panning = false;
     float enterHold = 0.f;
@@ -160,8 +161,10 @@ int runSinglePlayer(bool reuseWindow = false) {
             (IsKeyDown(KEY_SPACE) ||
              (IsMouseButtonDown(MOUSE_BUTTON_LEFT) && !shiftDown)) &&
             !chatTyping;
-        const bool shiftSplitClick =
-            shiftDown && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && !chatTyping;
+        const bool shiftSplitDown =
+            shiftDown && IsMouseButtonDown(MOUSE_BUTTON_LEFT) && !chatTyping;
+        const bool shiftSplitClick = shiftSplitDown && !prevShiftSplitDown;
+        prevShiftSplitDown = shiftSplitDown;
         if (shiftSplitClick) pendingShiftSplit = true;
         const bool grabHeld = IsKeyDown(KEY_E) && !chatTyping;
 
@@ -452,6 +455,8 @@ bool runOnlineSession(const std::string& host, uint16_t port, std::string& errOu
 
     Vec2 panStart{0, 0};
     bool panning = false;
+    bool prevShiftSplitDown = false;
+    int splitBurstFrames = 0;
     bool chatOpen = false;
     std::string chatDraft;
     LobbyUIState lobbyUi;
@@ -557,8 +562,12 @@ bool runOnlineSession(const std::string& host, uint16_t port, std::string& errOu
             (IsKeyDown(KEY_ENTER) || IsKeyDown(KEY_KP_ENTER)) && !chatTyping;
         const bool grabHeld = IsKeyDown(KEY_E) && !chatTyping;
         const bool respawnHeld = IsKeyDown(KEY_R) && !chatTyping;
-        const bool shiftSplitClick =
-            shiftDown && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && !chatTyping;
+        const bool shiftSplitDown =
+            shiftDown && IsMouseButtonDown(MOUSE_BUTTON_LEFT) && !chatTyping;
+        if (shiftSplitDown && !prevShiftSplitDown) splitBurstFrames = 4;
+        prevShiftSplitDown = shiftSplitDown;
+        const bool shiftSplitClick = splitBurstFrames > 0;
+        if (splitBurstFrames > 0) --splitBurstFrames;
 
         float wheel = GetMouseWheelMove();
         if (wheel != 0.f) {
