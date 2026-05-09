@@ -478,7 +478,7 @@ bool runOnlineSession(const std::string& host, uint16_t port, std::string& errOu
         return false;
     }
 
-    Renderer renderer(1680, 945, 480, 270, "SlimyJourney — Online", FramePacing::FastPresent,
+    Renderer renderer(1680, 945, 480, 270, "SlimyJourney — Online", FramePacing::Vsync,
                         reuseWindow ? RendererWindowMode::UseExistingWindow
                                     : RendererWindowMode::CreateWindow);
     renderer.camera.zoom = 14.f;

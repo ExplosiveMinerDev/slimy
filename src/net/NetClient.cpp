@@ -119,7 +119,7 @@ void Client::ingestSnapshot(uint32_t frame, std::vector<RemoteSlime>&& slimes,
         snapT1_ = clock::now();
         const float dt = std::chrono::duration<float>(snapT1_ - snapT0_).count();
         if (dt > 1e-4f && dt < 0.35f)
-            snapIntervalEma_ = snapIntervalEma_ * 0.78f + dt * 0.22f;
+            snapIntervalEma_ = snapIntervalEma_ * 0.68f + dt * 0.32f;
     }
 }
 
@@ -399,7 +399,10 @@ void Client::advanceInterpolation() {
         return;
     }
     const auto now = clock::now();
-    float span = std::max(snapIntervalEma_, 1.f / 90.f);
+    // Slightly shorter blend window than raw EMA → display tracks snapshots a bit faster
+    // (less “rubbery” lag vs solo local physics).
+    float span = std::max(snapIntervalEma_ * 0.88f, 1.f / 120.f);
+    span = std::min(span, 0.12f);
     float alpha = std::chrono::duration<float>(now - snapT0_).count() / span;
     alpha = std::clamp(alpha, 0.f, 1.f);
 

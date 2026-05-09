@@ -185,10 +185,10 @@ void Room::broadcastSnapshot(_ENetHost* host) {
 
     auto now = clock::now();
     if (now < nextSnap_) return;
-    // Headless dedicated server: slightly lower rate — large snapshots × many peers saturates
-    // low-core VPS and ENet outgoing queues.
+    // ~30 Hz — same target as non-headless listen host; keeps motion closer to solo while
+    // staying lighter than 60 Hz × large UDP payloads on tiny VPS.
 #ifdef PE_HEADLESS_SERVER
-    nextSnap_ = now + std::chrono::milliseconds(58);
+    nextSnap_ = now + std::chrono::milliseconds(33);
 #else
     nextSnap_ = now + std::chrono::milliseconds(33);
 #endif
@@ -256,7 +256,7 @@ void Room::broadcastSnapshot(_ENetHost* host) {
 
             const int n = (int)sb->points.size();
 #ifdef PE_HEADLESS_SERVER
-            constexpr int kWireVertsMax = 14;
+            constexpr int kWireVertsMax = 18;
             int stride = 1;
             while ((n + stride - 1) / stride > kWireVertsMax)
                 ++stride;

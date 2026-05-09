@@ -10,8 +10,8 @@ class World;
 class SoftBody;
 struct Body;
 
-/// `Vsync` — one window feels best (solo). `FastPresent` — no vsync + higher cap so
-/// several game windows on one GPU / one display do not stall each other at ~30–45 FPS.
+/// `Vsync` — default for solo and online (smooth display + 60 Hz cap). `FastPresent` — no vsync,
+/// higher cap; use if you need several game windows on one machine without capping each at ~60.
 enum class FramePacing { Vsync, FastPresent };
 
 struct Camera2D {
