@@ -98,9 +98,6 @@ int runSinglePlayer(bool reuseWindow = false) {
     bool panning = false;
     float enterHold = 0.f;
     bool enterMergeLatch = false;
-    float hintRemain = 0.f;
-    std::string hintText;
-
     bool chatOpen = false;
     std::string chatDraft;
     float soloBubbleRemain = 0.f;
@@ -173,18 +170,11 @@ int runSinglePlayer(bool reuseWindow = false) {
         if (shiftSplitClick) pendingShiftSplit = true;
         const bool grabHeld = IsKeyDown(KEY_E) && !chatTyping;
         if (!chatTyping && IsKeyPressed(KEY_C)) {
-            if (slime.cycleControlledFragment(world)) {
-                hintText = "Fragment controle change";
-                hintRemain = 1.4f;
-            }
+            slime.cycleControlledFragment(world);
         }
         if (!chatTyping && IsKeyPressed(KEY_F)) {
             slime.cycleColor(world);
-            hintText = "Couleur du slime changee";
-            hintRemain = 1.4f;
         }
-        hintRemain = std::max(0.f, hintRemain - frameTime);
-
         bool enterDown =
             (IsKeyDown(KEY_ENTER) || IsKeyDown(KEY_KP_ENTER)) && !chatTyping;
         if (enterDown) {
@@ -252,7 +242,6 @@ int runSinglePlayer(bool reuseWindow = false) {
 
         renderer.beginFrame();
         renderer.drawWorld(world, &slime.puddles());
-        if (hintRemain > 0.f) renderer.drawHUDBanner(hintText);
         if (slime.stuckSpikeCount() > 0 && Slime::playerBlobCount(world, slime.myTag()) > 0) {
             std::vector<Vec2> spikeOff;
             slime.embeddedSpikeDrawOffsets(world, spikeOff);
@@ -403,8 +392,7 @@ void drawLobbyBrowser(net::Client& client, LobbyUIState& ui, bool& wantQuit,
     char maxPlayersLabel[64];
     std::snprintf(maxPlayersLabel, sizeof(maxPlayersLabel), "joueurs max: %d", ui.maxPlayers);
     DrawText(maxPlayersLabel, colX + 44, optionsY + 7, 14, ink);
-    DrawText("C: fragment | F: couleur | Ctrl: rassembler", colX + 170, optionsY + 7, 14,
-             inkDim);
+    DrawText("Ctrl: rassembler", colX + 170, optionsY + 7, 14, inkDim);
     if (click && hotMinus) ui.maxPlayers = std::max(1, ui.maxPlayers - 1);
     if (click && hotPlus) ui.maxPlayers = std::min(net::kMaxPlayers, ui.maxPlayers + 1);
 
@@ -507,9 +495,6 @@ bool runOnlineSession(const std::string& host, uint16_t port, std::string& errOu
     std::string chatDraft;
     LobbyUIState lobbyUi;
     uint8_t localSlimeColor = 0;
-    float hintRemain = 0.f;
-    std::string hintText;
-
     char serverAddr[80];
     std::snprintf(serverAddr, sizeof(serverAddr), "%s:%u", host.c_str(), (unsigned)port);
 
@@ -618,17 +603,8 @@ bool runOnlineSession(const std::string& host, uint16_t port, std::string& errOu
         const bool shiftSplitClick = splitBurstFrames > 0;
         if (splitBurstFrames > 0) --splitBurstFrames;
         const bool switchFragmentClick = !chatTyping && IsKeyPressed(KEY_C);
-        if (!chatTyping && IsKeyPressed(KEY_F)) {
+        if (!chatTyping && IsKeyPressed(KEY_F))
             localSlimeColor = (uint8_t)((localSlimeColor + 1) % 8);
-            hintText = "Couleur du slime changee";
-            hintRemain = 1.4f;
-        }
-        if (switchFragmentClick) {
-            hintText = "Fragment controle change";
-            hintRemain = 1.4f;
-        }
-        hintRemain = std::max(0.f, hintRemain - frameTime);
-
         float wheel = GetMouseWheelMove();
         if (wheel != 0.f) {
             Vec2 mouse = renderer.mouseInCanvas();
@@ -718,8 +694,6 @@ bool runOnlineSession(const std::string& host, uint16_t port, std::string& errOu
         }
         if (g_clientAutoUpdateBusy.load()) {
             renderer.drawHUDBanner("Telechargement de la mise a jour...");
-        } else if (hintRemain > 0.f) {
-            renderer.drawHUDBanner(hintText);
         } else if (client.needsClientUpgrade()) {
             char banner[160];
             std::snprintf(banner, sizeof(banner),
