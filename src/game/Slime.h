@@ -36,10 +36,6 @@ public:
     static constexpr int ballTag = 7;
     /// Solides décor / tests carte (ex. caillou rouge dans default.sjmap).
     static constexpr int mapTestRockTag = 8;
-    /// Champignon rebond (surface bombée) — renvoie le slime vers le ciel.
-    static constexpr int bouncyPadTag = 9;
-    /// Bande très glissante (friction basse sur le sol).
-    static constexpr int speedGelTag = 10;
 
     /// Launch velocity magnitudes (world units / s) — applied along the aim direction.
     /// (Tuned at ~80% of the original feel — momentum reduced by 20%.)
@@ -105,8 +101,6 @@ public:
 private:
     void applySpikeHazard(float dt, World& world);
     void syncEmbeddedSpikes(float dt, const World& world);
-    void applyEmbeddedSpikePhysics(float dt, World& world);
-    void applyBouncyPads(float dt, World& world);
     void updateGrabThrow(float dt, World& world, bool grabHeld);
     void launch(World& world, const Vec2& aimDir);
     void emitLandingTrail(World& world, float impactSpeed);
@@ -127,7 +121,8 @@ private:
         float phase = 0.f;
     };
     std::vector<EmbeddedSpike> embeddedSpikes_;
-    float bouncyPadCooldown_ = 0.f;
+    /// While on spikes: timer to add spikes at a steady rate (no RNG spam).
+    float spikeStickTimer_ = 0.f;
 
     uint32_t grabBodyId_ = 0;
     bool wasGrabHeld_ = false;

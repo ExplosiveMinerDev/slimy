@@ -87,7 +87,6 @@ Vec2 spawnPosForSlot(int slot) {
 void appendSolidMapEntries(World& world, const std::vector<SolidMapEntry>& entries) {
     auto frictionFor = [](int tag) -> float {
         if (tag == Slime::spikeHazardTag) return 0.4f;
-        if (tag == Slime::speedGelTag) return 0.07f;
         return 0.92f;
     };
     for (const auto& e : entries) {
@@ -112,13 +111,6 @@ void buildSceneCore(World& world) {
     auto spikeTri = []() {
         std::vector<Vec2> v{{0.f, -0.42f}, {0.30f, 0.f}, {-0.30f, 0.f}};
         return Shape::polygon(v);
-    };
-    auto mushCap = []() {
-        std::vector<Vec2> v{
-            {-0.55f, 0.22f}, {0.55f, 0.22f}, {0.38f, -0.02f}, {0.22f, -0.38f},
-            {0.f, -0.52f},   {-0.22f, -0.38f}, {-0.38f, -0.02f},
-        };
-        return Shape::polygon(std::move(v));
     };
 
     // === Bounds ===
@@ -162,10 +154,57 @@ void buildSceneCore(World& world) {
         ball->restitution = 0.45f;
     }
 
-    // === Fun props: champignons rebonds + gel ultra-glissant ===
-    addStatic(mushCap(), {-26.f, 9.68f}, Slime::bouncyPadTag, 0.55f);
-    addStatic(mushCap(), {-30.5f, 9.68f}, Slime::bouncyPadTag, 0.55f);
-    addStatic(Shape::box(4.2f, 0.14f), {-18.f, 9.83f}, Slime::speedGelTag, 0.07f);
+    // === More dynamic props (grab / roll / stack) ===
+    {
+        constexpr float y0 = 9.22f;
+        for (int stack = 0; stack < 3; ++stack) {
+            Body* c =
+                addDynamic(Shape::box(0.36f, 0.36f), {-14.f + (float)stack * 0.02f,
+                                                        y0 - (float)stack * 0.76f}, Slime::crateTag,
+                           0.55f);
+            c->friction = 0.52f;
+            c->restitution = 0.1f;
+        }
+    }
+    for (float x : {-8.f, 8.f}) {
+        Body* c = addDynamic(Shape::box(0.32f, 0.32f), {x + 0.12f, 6.08f}, Slime::crateTag, 0.45f);
+        c->friction = 0.5f;
+        c->restitution = 0.06f;
+    }
+    {
+        Body* b = addDynamic(Shape::circle(0.28f), {-3.5f, 6.08f}, Slime::ballTag, 0.55f);
+        b->friction = 0.35f;
+        b->restitution = 0.52f;
+    }
+    {
+        Body* b = addDynamic(Shape::circle(0.32f), {3.2f, 6.08f}, Slime::ballTag, 0.62f);
+        b->friction = 0.38f;
+        b->restitution = 0.48f;
+    }
+    {
+        Body* b = addDynamic(Shape::circle(0.22f), {-0.8f, 3.42f}, Slime::ballTag, 0.5f);
+        b->friction = 0.32f;
+        b->restitution = 0.58f;
+    }
+
+    Body* wedge = addDynamic(Shape::box(0.34f, 0.52f), {18.f, 9.2f}, Slime::crateTag, 0.65f);
+    wedge->rot = -0.22f;
+    wedge->friction = 0.48f;
+
+    Body* tumble = addDynamic(Shape::box(0.3f, 0.62f), {24.f, 8.82f}, Slime::crateTag, 0.58f);
+    tumble->rot = 0.35f;
+    tumble->friction = 0.5f;
+
+    {
+        Body* b = addDynamic(Shape::circle(0.26f), {-35.f, 9.5f}, Slime::ballTag, 0.55f);
+        b->friction = 0.4f;
+        b->restitution = 0.5f;
+    }
+    {
+        Body* b = addDynamic(Shape::circle(0.3f), {32.f, 9.15f}, Slime::ballTag, 0.75f);
+        b->friction = 0.42f;
+        b->restitution = 0.42f;
+    }
 
     // === Map update test (see maps/default.sjmap): caillou rouge sur le sol ===
     addStatic(Shape::box(0.5f, 0.45f), {4.f, 10.35f}, Slime::mapTestRockTag);
