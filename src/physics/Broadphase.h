@@ -1,8 +1,9 @@
 #pragma once
 #include "math/Vec2.h"
-#include <vector>
-#include <unordered_map>
 #include <cstdint>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
 
 namespace pe {
 
@@ -16,14 +17,15 @@ public:
     void clear();
     void insert(Body* b);
 
-    // Returns pair indices into bodies list
-    std::vector<std::pair<Body*, Body*>> queryPairs();
+    /// Fills `out` (cleared first); reuses storage to avoid per-frame allocations on long runs.
+    void queryPairs(std::vector<std::pair<Body*, Body*>>& out);
 
 private:
     float cellSize_;
     struct Cell { std::vector<Body*> bodies; };
     std::unordered_map<uint64_t, Cell> cells_;
     std::vector<Body*> all_;
+    std::unordered_set<uint64_t> pairSeenScratch_;
 
     static uint64_t key(int x, int y) {
         return (uint64_t)(uint32_t)x | ((uint64_t)(uint32_t)y << 32);

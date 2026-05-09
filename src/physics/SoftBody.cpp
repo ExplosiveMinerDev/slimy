@@ -259,6 +259,9 @@ void SoftBody::clampNeedleLikeShape(float maxAspect, float minThin) {
 }
 
 void SoftBody::accumulateForces(const Vec2& gravity, const std::vector<Body*>& rigids) {
+#ifdef PE_HEADLESS_SERVER
+    (void)rigids;
+#endif
     for (auto& p : points) {
         if (!p.pinned) p.force += gravity * p.mass;
     }
@@ -311,6 +314,7 @@ void SoftBody::accumulateForces(const Vec2& gravity, const std::vector<Body*>& r
 
     // Static-surface adhesion: pull perimeter particles toward the nearest boundary even when
     // they sit just outside the collision volume (pointVsBody inside-only would miss them).
+#ifndef PE_HEADLESS_SERVER
     if (isPlayerSlimeSoftBodyTag(tag)) {
         constexpr float kReach = 0.34f;
         constexpr float kPull = 300.f;
@@ -355,6 +359,7 @@ void SoftBody::accumulateForces(const Vec2& gravity, const std::vector<Body*>& r
             }
         }
     }
+#endif
 }
 
 void SoftBody::integrate(float dt) {
@@ -385,9 +390,26 @@ void SoftBody::integrate(float dt) {
 }
 
 void SoftBody::resolveCollisions(std::vector<Body*>& rigids) {
+#ifdef PE_HEADLESS_SERVER
+    thread_local std::vector<Body*> nearRigid;
+    nearRigid.clear();
+    AABB box = aabb();
+    constexpr float pad = 0.55f;
+    box.min.x -= pad;
+    box.min.y -= pad;
+    box.max.x += pad;
+    box.max.y += pad;
+    for (Body* b : rigids) {
+        if (b && box.overlaps(b->aabb())) nearRigid.push_back(b);
+    }
+    if (nearRigid.empty()) return;
+    std::vector<Body*>* activeList = &nearRigid;
+#else
+    std::vector<Body*>* activeList = &rigids;
+#endif
     for (auto& p : points) {
         if (p.pinned) continue;
-        for (Body* b : rigids) {
+        for (Body* b : *activeList) {
             Vec2 n, closest;
             float depth;
             // Use the entry-aware variant so a perimeter point that punched

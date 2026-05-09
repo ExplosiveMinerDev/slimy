@@ -11,36 +11,51 @@ namespace pe {
 
 namespace {
 
-std::vector<std::vector<int>> connectedComponents(const SoftBody& sb) {
+thread_local std::vector<std::vector<int>> tlsConnComps;
+
+/// Fill `out` with vertex indices per connected component (spring graph). Reuses TLS scratch;
+/// avoids allocating fresh vectors every physics step (idle servers still ran this for each blob).
+void connectedComponentsInto(const SoftBody& sb, std::vector<std::vector<int>>& out) {
+    out.clear();
     const int n = (int)sb.points.size();
-    std::vector<std::vector<int>> adj(n);
+    if (n <= 0) return;
+
+    thread_local std::vector<std::vector<int>> adjRows;
+    thread_local std::vector<char> vis;
+    thread_local std::vector<int> comp;
+    thread_local std::deque<int> q;
+
+    if ((int)adjRows.size() < n) adjRows.resize((size_t)n);
+    for (int i = 0; i < n; ++i) adjRows[(size_t)i].clear();
+
     for (const Spring& sp : sb.springs) {
         if (sp.broken) continue;
-        adj[sp.a].push_back(sp.b);
-        adj[sp.b].push_back(sp.a);
+        adjRows[(size_t)sp.a].push_back(sp.b);
+        adjRows[(size_t)sp.b].push_back(sp.a);
     }
-    std::vector<char> vis(n, 0);
-    std::vector<std::vector<int>> out;
+
+    vis.assign((size_t)n, 0);
+
     for (int i = 0; i < n; ++i) {
-        if (vis[i]) continue;
-        std::vector<int> comp;
-        std::deque<int> q;
+        if (vis[(size_t)i]) continue;
+        comp.clear();
+        q.clear();
         q.push_back(i);
-        vis[i] = 1;
+        vis[(size_t)i] = 1;
         while (!q.empty()) {
             int u = q.front();
             q.pop_front();
             comp.push_back(u);
-            for (int v : adj[u]) {
-                if (!vis[v]) {
-                    vis[v] = 1;
+            for (int v : adjRows[(size_t)u]) {
+                if (!vis[(size_t)v]) {
+                    vis[(size_t)v] = 1;
                     q.push_back(v);
                 }
             }
         }
-        out.push_back(std::move(comp));
+        out.emplace_back();
+        out.back().swap(comp);
     }
-    return out;
 }
 
 /// Indices into `comp` (local 0..m-1), monotone chain; excludes duplicate endpoints.
@@ -842,7 +857,8 @@ void World::tryBinarySplitDamagedBlob(int tag) {
         SoftBody& sb = *softBodies_[i];
         if (sb.tag != tag) continue;
 
-        if (connectedComponents(sb).size() != 1) continue;
+        connectedComponentsInto(sb, tlsConnComps);
+        if (tlsConnComps.size() != 1) continue;
 
         int brk = 0;
         for (auto& sp : sb.springs)
@@ -953,9 +969,9 @@ void World::step(float dt) {
     for (int i = 0; i < positionIterations; ++i) solvePositions();
 
     // 8. soft bodies
-    std::vector<Body*> rigids;
-    rigids.reserve(bodies_.size());
-    for (auto& b : bodies_) rigids.push_back(b.get());
+    rigidsStepScratch_.clear();
+    rigidsStepScratch_.reserve(bodies_.size());
+    for (auto& b : bodies_) rigidsStepScratch_.push_back(b.get());
 
     // Stiff mass-springs need smaller dt than the rigid solver — sub-step soft integration.
 #ifdef PE_HEADLESS_SERVER
@@ -966,7 +982,7 @@ void World::step(float dt) {
     float softH = dt / (float)softSubsteps;
     for (int k = 0; k < softSubsteps; ++k) {
         for (auto& sb : softBodies_) {
-            sb->accumulateForces(gravity, rigids);
+            sb->accumulateForces(gravity, rigidsStepScratch_);
             sb->integrate(softH);
         }
         for (auto& sb : softBodies_) {
@@ -975,7 +991,7 @@ void World::step(float dt) {
 #else
             for (int it = 0; it < 8; ++it)
 #endif
-                sb->resolveCollisions(rigids);
+                sb->resolveCollisions(rigidsStepScratch_);
         }
 #ifdef PE_HEADLESS_SERVER
         if (k == softSubsteps - 1)
@@ -1031,11 +1047,20 @@ void World::processSoftBodyConnectivity() {
 
     for (size_t i = 0; i < softBodies_.size(); ++i) {
         SoftBody& sb = *softBodies_[i];
-        auto comps = connectedComponents(sb);
-        if (comps.size() <= 1) continue;
+        bool anyBrokenSpring = false;
+        for (const Spring& sp : sb.springs) {
+            if (sp.broken) {
+                anyBrokenSpring = true;
+                break;
+            }
+        }
+        if (!anyBrokenSpring) continue;
+
+        connectedComponentsInto(sb, tlsConnComps);
+        if (tlsConnComps.size() <= 1) continue;
 
         std::vector<SoftBody> frags;
-        for (auto& c : comps) {
+        for (auto& c : tlsConnComps) {
             if (c.size() < 3) continue;
             SoftBody piece = rebuildConvexFragment(sb, c);
             if (piece.points.size() >= 3) frags.push_back(std::move(piece));
@@ -1074,8 +1099,8 @@ void World::detectCollisions() {
     broadphase_.clear();
     for (auto& b : bodies_) broadphase_.insert(b.get());
 
-    auto pairs = broadphase_.queryPairs();
-    for (auto& [a, b] : pairs) {
+    broadphase_.queryPairs(broadpairScratch_);
+    for (auto& [a, b] : broadpairScratch_) {
         Manifold m;
         if (collide(*a, *b, m)) {
             m.a = a; m.b = b;

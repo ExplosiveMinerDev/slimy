@@ -44,6 +44,9 @@ private:
     Broadphase broadphase_{4.f};
 
     std::vector<Manifold> manifolds_;
+    /// Reused in step()/detectCollisions() — avoids heap churn during long sessions.
+    std::vector<Body*> rigidsStepScratch_;
+    std::vector<std::pair<Body*, Body*>> broadpairScratch_;
 
     uint32_t nextId_ = 1;
 

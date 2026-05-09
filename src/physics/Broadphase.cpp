@@ -1,6 +1,5 @@
 ﻿#include "physics/Broadphase.h"
 #include "physics/Body.h"
-#include <unordered_set>
 #include <cmath>
 
 namespace pe {
@@ -22,9 +21,9 @@ void Broadphase::insert(Body* b) {
             cells_[key(x, y)].bodies.push_back(b);
 }
 
-std::vector<std::pair<Body*, Body*>> Broadphase::queryPairs() {
-    std::vector<std::pair<Body*, Body*>> pairs;
-    std::unordered_set<uint64_t> seen;
+void Broadphase::queryPairs(std::vector<std::pair<Body*, Body*>>& out) {
+    out.clear();
+    pairSeenScratch_.clear();
     for (auto& [k, cell] : cells_) {
         for (size_t i = 0; i < cell.bodies.size(); ++i) {
             for (size_t j = i + 1; j < cell.bodies.size(); ++j) {
@@ -34,13 +33,12 @@ std::vector<std::pair<Body*, Body*>> Broadphase::queryPairs() {
                 Body* lo = a < b ? a : b;
                 Body* hi = a < b ? b : a;
                 uint64_t pk = (uint64_t)lo->id | ((uint64_t)hi->id << 32);
-                if (!seen.insert(pk).second) continue;
+                if (!pairSeenScratch_.insert(pk).second) continue;
                 if (!lo->aabb().overlaps(hi->aabb())) continue;
-                pairs.emplace_back(lo, hi);
+                out.emplace_back(lo, hi);
             }
         }
     }
-    return pairs;
 }
 
 } // namespace pe
