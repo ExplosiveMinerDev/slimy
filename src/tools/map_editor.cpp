@@ -123,6 +123,7 @@ int main() {
     Vec2 panMouseStartCanvas{};
 
     float accum = 0.f;
+    bool pendingShiftSplit = false;
     float enterHoldTest = 0.f;
     bool enterMergeLatchTest = false;
 
@@ -296,6 +297,7 @@ int main() {
                 rebuildWorld();
                 slime.spawn(world, pe::kSpawnPos);
                 accum = 0.f;
+                pendingShiftSplit = false;
                 enterHoldTest = 0.f;
                 enterMergeLatchTest = false;
                 status = "TEST — Esc = Edit   Space = jump   Shift+LMB = split   Ctrl = gather   Enter = merge";
@@ -306,6 +308,7 @@ int main() {
                 mode = UiMode::Editing;
                 rebuildWorld();
                 sel = -1;
+                pendingShiftSplit = false;
                 enterHoldTest = 0.f;
                 enterMergeLatchTest = false;
                 status = "Edit mode";
@@ -324,6 +327,7 @@ int main() {
                  (IsMouseButtonDown(MOUSE_BUTTON_LEFT) && !shiftDown));
             const bool shiftSplitClick =
                 shiftDown && IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
+            if (shiftSplitClick) pendingShiftSplit = true;
             const bool grabHeld = IsKeyDown(KEY_E);
 
             bool enterDown =
@@ -344,8 +348,10 @@ int main() {
                 for (auto& bp : world.bodies()) {
                     if (bp->type == pe::BodyType::Dynamic) bp->grabOwnerTag = 0;
                 }
+                const bool doSplitThisStep = pendingShiftSplit;
+                pendingShiftSplit = false;
                 slime.update(kFixedDt, world, mouseWorld, jumpHeld, grabHeld, gatherHeld,
-                              shiftSplitClick);
+                             doSplitThisStep);
                 world.step(kFixedDt);
                 world.tryBinarySplitDamagedBlob(slime.myTag());
                 accum -= kFixedDt;

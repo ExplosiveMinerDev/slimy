@@ -91,6 +91,7 @@ int runSinglePlayer(bool reuseWindow = false) {
 
     const float fixedDt = 1.f / 120.f;
     float accumulator = 0.f;
+    bool pendingShiftSplit = false;
     Vec2 panStart{0, 0};
     bool panning = false;
     float enterHold = 0.f;
@@ -161,6 +162,7 @@ int runSinglePlayer(bool reuseWindow = false) {
             !chatTyping;
         const bool shiftSplitClick =
             shiftDown && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && !chatTyping;
+        if (shiftSplitClick) pendingShiftSplit = true;
         const bool grabHeld = IsKeyDown(KEY_E) && !chatTyping;
 
         bool enterDown =
@@ -210,8 +212,10 @@ int runSinglePlayer(bool reuseWindow = false) {
             for (auto& bp : world.bodies()) {
                 if (bp->type == BodyType::Dynamic) bp->grabOwnerTag = 0;
             }
+            const bool doSplitThisStep = pendingShiftSplit;
+            pendingShiftSplit = false;
             slime.update(fixedDt, world, mouseWorld, jumpHeld, grabHeld, gatherHeld,
-                          shiftSplitClick);
+                         doSplitThisStep);
             world.step(fixedDt);
             world.tryBinarySplitDamagedBlob(slime.myTag());
             accumulator -= fixedDt;

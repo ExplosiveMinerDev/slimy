@@ -281,6 +281,16 @@ SoftBody rebuildConvexFragment(const SoftBody& orig, const std::vector<int>& com
         nb.points.push_back(pm);
     }
 
+    // Keep CCW winding so rendering/pressure stay consistent after split.
+    if (hn >= 3) {
+        float twice = 0.f;
+        for (int i = 0; i < hn; ++i) {
+            twice += cross(nb.points[(size_t)i].pos,
+                           nb.points[(size_t)((i + 1) % hn)].pos);
+        }
+        if (twice < 0.f) std::reverse(nb.points.begin(), nb.points.end());
+    }
+
     inflateReconstructedBlob(nb);
 
     for (int i = 0; i < hn; ++i) {
@@ -766,7 +776,9 @@ bool World::angularBisectLargestBlobWithTag(int tag, Vec2 axisDir) {
 }
 
 bool World::playerSplitLargestBlobWithTag(int tag, Vec2 axisDir) {
-    if (splitLargestBlobWithTag(tag, axisDir)) return true;
+    // Player-triggered split should be deterministic and binary: exactly two
+    // contiguous angular fragments. The spring-break variant can occasionally
+    // produce 3+ components when pre-damaged springs already exist.
     return angularBisectLargestBlobWithTag(tag, axisDir);
 }
 
