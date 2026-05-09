@@ -21,12 +21,19 @@ struct Camera2D {
     float rotation = 0.f;
 };
 
+/// Passé au constructeur : créer une nouvelle fenêtre Raylib ou réutiliser celle ouverte par le menu.
+enum class RendererWindowMode { CreateWindow, UseExistingWindow };
+
 class Renderer {
 public:
     /// windowW/H: initial OS window size; internalW/H: fixed low-res game framebuffer (pixel-perfect).
     Renderer(int windowW, int windowH, int internalW, int internalH, const std::string& title,
-             FramePacing pacing = FramePacing::Vsync);
+             FramePacing pacing = FramePacing::Vsync,
+             RendererWindowMode windowMode = RendererWindowMode::CreateWindow);
     ~Renderer();
+
+    /// Si la fenêtre a été créée ailleurs (`UseExistingWindow`), ne pas fermer Raylib au destructeur.
+    bool ownsWindow() const { return ownsWindow_; }
 
     bool shouldClose() const;
     void beginFrame();
@@ -71,6 +78,7 @@ private:
     int internalH_ = 0;
     RenderTexture2D canvas_{};
     bool canvasReady_ = false;
+    bool ownsWindow_ = true;
 
     void drawScaledCanvas();
     void drawBody(const Body& b, unsigned int fillColor, unsigned int outlineColor);

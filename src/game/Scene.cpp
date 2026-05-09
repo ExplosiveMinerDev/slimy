@@ -31,8 +31,9 @@ constexpr Vec2 kSpawnPoints[net::kMaxPlayers] = {
 /// duplicate solids when maps/default.sjmap repeats geometry already in buildSceneCore
 /// (phantom platforms: drawn twice or client/server mismatch vs cwd).
 bool nearlySameBoxStatic(const World& world, const SolidMapEntry& e) {
-    constexpr float epsC = 0.06f;
-    constexpr float epsH = 0.04f;
+    /// Tolérance plus large : évite doublons carte/code (.sjmap vs Scene) à cause du flottant.
+    constexpr float epsC = 0.12f;
+    constexpr float epsH = 0.08f;
     for (const auto& bp : world.bodies()) {
         const Body& b = *bp;
         if (b.type != BodyType::Static) continue;
@@ -135,73 +136,82 @@ void buildSceneCore(World& world) {
     for (float x = 22.f; x <= 28.f; x += 0.7f)
         addStatic(spikeTri(), {x, 9.78f}, Slime::spikeHazardTag, 0.4f);
 
+    /// Surface « marchable » du sol principal (grass box cy=10.5, halfH=0.6).
+    constexpr float kGrassTopY = 10.5f - 0.6f;
+
     // === Light playground props ===
     for (int i = 0; i < 3; ++i) {
         Body* c = addDynamic(Shape::box(0.42f, 0.42f),
-                             {-30.f + (float)i * 1.0f, 9.55f},
+                             {-30.f + (float)i * 1.0f, kGrassTopY + 0.42f},
                              Slime::crateTag, 0.6f);
         c->friction = 0.55f;
         c->restitution = 0.08f;
     }
     {
-        Body* ball = addDynamic(Shape::circle(0.55f), {30.f, 9.0f}, Slime::ballTag, 1.2f);
+        Body* ball = addDynamic(Shape::circle(0.55f), {30.f, kGrassTopY + 0.55f}, Slime::ballTag, 1.2f);
         ball->friction = 0.4f;
         ball->restitution = 0.45f;
     }
     {
-        Body* ball = addDynamic(Shape::circle(0.4f), {6.f, 8.5f}, Slime::ballTag, 1.0f);
+        Body* ball = addDynamic(Shape::circle(0.4f), {6.f, kGrassTopY + 0.4f}, Slime::ballTag, 1.0f);
         ball->friction = 0.4f;
         ball->restitution = 0.45f;
     }
 
     // === More dynamic props (grab / roll / stack) ===
+    constexpr float kStackHalf = 0.36f;
+    constexpr float kStackGap = 0.74f; // ≥ 2×half + marge pour éviter spawn coincé
     {
-        constexpr float y0 = 9.22f;
+        const float yBottom = kGrassTopY + kStackHalf;
         for (int stack = 0; stack < 3; ++stack) {
-            Body* c =
-                addDynamic(Shape::box(0.36f, 0.36f), {-14.f + (float)stack * 0.02f,
-                                                        y0 - (float)stack * 0.76f}, Slime::crateTag,
-                           0.55f);
+            const float y = yBottom - (float)stack * kStackGap;
+            Body* c = addDynamic(Shape::box(kStackHalf, kStackHalf),
+                                 {-14.f + (float)stack * 0.015f, y}, Slime::crateTag, 0.55f);
             c->friction = 0.52f;
             c->restitution = 0.1f;
         }
     }
+    // Plateformes « médianes » (-10,5.5) et (10,5.5) : surface haute y = 5.25 caisse half 0.16 → cy ≈ 5.41
     for (float x : {-8.f, 8.f}) {
-        Body* c = addDynamic(Shape::box(0.32f, 0.32f), {x + 0.12f, 6.08f}, Slime::crateTag, 0.45f);
+        Body* c = addDynamic(Shape::box(0.32f, 0.32f), {x + 0.12f, 5.41f}, Slime::crateTag, 0.45f);
         c->friction = 0.5f;
         c->restitution = 0.06f;
     }
+    // Balles sur plateforme centrale (0,4.5) surface y = 4.2 — x dans [-2.6,2.6]
     {
-        Body* b = addDynamic(Shape::circle(0.28f), {-3.5f, 6.08f}, Slime::ballTag, 0.55f);
+        Body* b = addDynamic(Shape::circle(0.28f), {-2.f, 4.2f + 0.28f}, Slime::ballTag, 0.55f);
         b->friction = 0.35f;
         b->restitution = 0.52f;
     }
     {
-        Body* b = addDynamic(Shape::circle(0.32f), {3.2f, 6.08f}, Slime::ballTag, 0.62f);
+        Body* b = addDynamic(Shape::circle(0.32f), {2.f, 4.2f + 0.32f}, Slime::ballTag, 0.62f);
         b->friction = 0.38f;
         b->restitution = 0.48f;
     }
+    // Pont étroit (0,3) surface y = 2.8
     {
-        Body* b = addDynamic(Shape::circle(0.22f), {-0.8f, 3.42f}, Slime::ballTag, 0.5f);
+        Body* b = addDynamic(Shape::circle(0.22f), {-0.8f, 2.8f + 0.22f}, Slime::ballTag, 0.5f);
         b->friction = 0.32f;
         b->restitution = 0.58f;
     }
 
-    Body* wedge = addDynamic(Shape::box(0.34f, 0.52f), {18.f, 9.2f}, Slime::crateTag, 0.65f);
+    Body* wedge = addDynamic(Shape::box(0.34f, 0.52f), {18.f, kGrassTopY + 0.52f}, Slime::crateTag,
+                             0.65f);
     wedge->rot = -0.22f;
     wedge->friction = 0.48f;
 
-    Body* tumble = addDynamic(Shape::box(0.3f, 0.62f), {24.f, 8.82f}, Slime::crateTag, 0.58f);
+    Body* tumble =
+        addDynamic(Shape::box(0.3f, 0.62f), {24.f, kGrassTopY + 0.62f}, Slime::crateTag, 0.58f);
     tumble->rot = 0.35f;
     tumble->friction = 0.5f;
 
     {
-        Body* b = addDynamic(Shape::circle(0.26f), {-35.f, 9.5f}, Slime::ballTag, 0.55f);
+        Body* b = addDynamic(Shape::circle(0.26f), {-35.f, kGrassTopY + 0.26f}, Slime::ballTag, 0.55f);
         b->friction = 0.4f;
         b->restitution = 0.5f;
     }
     {
-        Body* b = addDynamic(Shape::circle(0.3f), {32.f, 9.15f}, Slime::ballTag, 0.75f);
+        Body* b = addDynamic(Shape::circle(0.3f), {32.f, kGrassTopY + 0.3f}, Slime::ballTag, 0.75f);
         b->friction = 0.42f;
         b->restitution = 0.42f;
     }

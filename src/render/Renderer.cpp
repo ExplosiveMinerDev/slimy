@@ -50,22 +50,28 @@ constexpr float kTau = 6.2831853f;
 } // namespace
 
 Renderer::Renderer(int windowW, int windowH, int internalW, int internalH, const std::string& title,
-                   FramePacing pacing)
-    : internalW_(internalW), internalH_(internalH) {
-    unsigned flags = FLAG_WINDOW_RESIZABLE;
-    if (pacing == FramePacing::Vsync)
-        flags |= FLAG_VSYNC_HINT;
-    SetConfigFlags(flags);
-    InitWindow(windowW, windowH, title.c_str());
-    SetWindowMinSize(640, 360);
-    // Don't let raylib auto-close the window on ESC; the game loop uses ESC
-    // for "back to menu" and treats only the X button as a quit signal.
-    SetExitKey(KEY_NULL);
-    if (pacing == FramePacing::Vsync)
-        SetTargetFPS(60);
-    else {
-        // Without vsync, avoid uncapped busy-spin; 240 leaves headroom for 60/120/144 Hz panels.
-        SetTargetFPS(240);
+                   FramePacing pacing, RendererWindowMode windowMode)
+    : internalW_(internalW), internalH_(internalH),
+      ownsWindow_(windowMode == RendererWindowMode::CreateWindow) {
+    if (ownsWindow_) {
+        unsigned flags = FLAG_WINDOW_RESIZABLE;
+        if (pacing == FramePacing::Vsync)
+            flags |= FLAG_VSYNC_HINT;
+        SetConfigFlags(flags);
+        InitWindow(windowW, windowH, title.c_str());
+        SetWindowMinSize(640, 360);
+        SetExitKey(KEY_NULL);
+        if (pacing == FramePacing::Vsync)
+            SetTargetFPS(60);
+        else {
+            SetTargetFPS(240);
+        }
+    } else {
+        SetWindowTitle(title.c_str());
+        if (pacing == FramePacing::Vsync)
+            SetTargetFPS(60);
+        else
+            SetTargetFPS(240);
     }
 
     canvas_ = LoadRenderTexture(internalW_, internalH_);
@@ -81,7 +87,8 @@ Renderer::~Renderer() {
         UnloadRenderTexture(canvas_);
         canvasReady_ = false;
     }
-    if (IsWindowReady()) CloseWindow();
+    if (ownsWindow_ && IsWindowReady())
+        CloseWindow();
 }
 
 bool Renderer::shouldClose() const { return WindowShouldClose(); }

@@ -1,8 +1,6 @@
 # Solides par défaut sont dans Scene.cpp (buildSceneCore).
 # Ajoute des lignes "box cx cy halfW halfH tag" pour du niveau en plus (mods).
-# tag: grass | stone | platform | redrock  (caillou test MAJ carte — même entrée inlinée dans Scene.cpp)
+# tag: grass | stone | platform | redrock
 #
-# Test déploiement: un client outdated (vieux exe sans ce core / sans ce fichier) ne voit pas ce solide —
-# la map statique n’est pas streamée par le serveur; seuls exe+carte à jour l’affichent.
-
-box 4 10.35 0.5 0.45 redrock
+# Le caillou rouge de test est déjà défini dans Scene.cpp — ne pas dupliquer ici
+# (sinon double collision invisible / décalage client selon cwd).

@@ -43,6 +43,15 @@ inline void popLastUtf8Codepoint(std::string& s) {
     }
 }
 
+void bootstrapClientWindow() {
+    SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_VSYNC_HINT);
+    InitWindow(1680, 945, "Slimy Journey");
+    SetWindowMinSize(560, 380);
+    SetTargetFPS(60);
+    SetExitKey(KEY_NULL);
+    SetTextureFilter(GetFontDefault().texture, TEXTURE_FILTER_POINT);
+}
+
 void applyNetRigidsToWorld(World& world, const std::vector<net::RigidNetSample>& rigids) {
     for (const auto& s : rigids) {
         for (auto& bp : world.bodies()) {
@@ -66,8 +75,10 @@ void resetScene(World& world, Slime& slime) {
     slime.spawn(world, kSpawnPos);
 }
 
-int runSinglePlayer() {
-    Renderer renderer(1680, 945, 480, 270, "SlimyJourney — Solo");
+int runSinglePlayer(bool reuseWindow = false) {
+    Renderer renderer(1680, 945, 480, 270, "SlimyJourney — Solo", FramePacing::Vsync,
+                      reuseWindow ? RendererWindowMode::UseExistingWindow
+                                  : RendererWindowMode::CreateWindow);
     renderer.camera.zoom = 14.f;
     renderer.camera.target = kSpawnPos + Vec2{0.f, 4.f};
 
@@ -406,7 +417,8 @@ void drawLobbyBrowser(net::Client& client, LobbyUIState& ui, bool& wantQuit,
     }
 }
 
-bool runOnlineSession(const std::string& host, uint16_t port, std::string& errOut) {
+bool runOnlineSession(const std::string& host, uint16_t port, std::string& errOut,
+                      bool reuseWindow = false) {
     net::Client client;
     if (!client.connect(host, port)) {
         errOut =
@@ -416,7 +428,9 @@ bool runOnlineSession(const std::string& host, uint16_t port, std::string& errOu
         return false;
     }
 
-    Renderer renderer(1680, 945, 480, 270, "SlimyJourney — Online", FramePacing::FastPresent);
+    Renderer renderer(1680, 945, 480, 270, "SlimyJourney — Online", FramePacing::FastPresent,
+                        reuseWindow ? RendererWindowMode::UseExistingWindow
+                                    : RendererWindowMode::CreateWindow);
     renderer.camera.zoom = 14.f;
     renderer.camera.target = kSpawnPos + Vec2{0.f, 4.f};
 
@@ -638,12 +652,7 @@ struct MenuResult {
 };
 
 MenuResult runMenu(std::string& joinFailHint) {
-    SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_VSYNC_HINT);
-    InitWindow(780, 520, "Slimy Journey");
-    SetWindowMinSize(560, 380);
     SetTargetFPS(60);
-    SetExitKey(KEY_NULL);
-    SetTextureFilter(GetFontDefault().texture, TEXTURE_FILTER_POINT);
 
     MenuResult res;
     const std::string errBanner = joinFailHint;
@@ -903,7 +912,6 @@ MenuResult runMenu(std::string& joinFailHint) {
     }
     UnloadRenderTexture(pix);
     if (!decided && WindowShouldClose()) res.mode = MenuResult::Quit;
-    CloseWindow();
     return res;
 }
 
@@ -927,24 +935,31 @@ int main(int argc, char** argv) {
         if (argc >= 3) host = argv[2];
         if (argc >= 4) port = (uint16_t)std::atoi(argv[3]);
         std::string err;
-        return runOnlineSession(host, port, err) ? 0 : 2;
+        return runOnlineSession(host, port, err, false) ? 0 : 2;
     }
     if (argc >= 2 && std::strcmp(argv[1], "--solo") == 0) {
-        return runSinglePlayer();
+        return runSinglePlayer(false);
     }
 
+    bootstrapClientWindow();
     std::string joinFailHint;
     while (true) {
         MenuResult m = runMenu(joinFailHint);
         switch (m.mode) {
-            case MenuResult::Solo:   runSinglePlayer(); break;
+            case MenuResult::Solo:
+                runSinglePlayer(true);
+                SetTargetFPS(60);
+                break;
             case MenuResult::Online: {
                 std::string err;
-                if (!runOnlineSession(m.ip, m.port, err)) joinFailHint = err;
+                if (!runOnlineSession(m.ip, m.port, err, true)) joinFailHint = err;
+                SetTargetFPS(60);
                 break;
             }
             case MenuResult::Quit:
-            default: return 0;
+            default:
+                if (IsWindowReady()) CloseWindow();
+                return 0;
         }
     }
 }
