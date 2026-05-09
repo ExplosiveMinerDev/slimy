@@ -701,15 +701,6 @@ bool World::angularBisectLargestBlobWithTag(int tag, Vec2 axisDir) {
     Vec2 dir = axisDir.normalized();
     Vec2 cutNormal{-dir.y, dir.x};
 
-    std::vector<int> pos, neg;
-    pos.reserve((size_t)n);
-    neg.reserve((size_t)n);
-    for (int i = 0; i < n; ++i) {
-        const float s = dot(sb.points[(size_t)i].pos - c, cutNormal);
-        if (s >= 0.f) pos.push_back(i);
-        else neg.push_back(i);
-    }
-
     auto tryHalves = [&](const std::vector<int>& A, const std::vector<int>& B) -> bool {
         if ((int)A.size() < 3 || (int)B.size() < 3) return false;
         SoftBody na = rebuildConvexFragment(sb, A);
@@ -730,10 +721,6 @@ bool World::angularBisectLargestBlobWithTag(int tag, Vec2 axisDir) {
         return true;
     };
 
-    if ((int)pos.size() >= 3 && (int)neg.size() >= 3) {
-        if (tryHalves(pos, neg)) return true;
-    }
-
     std::vector<std::pair<float, int>> ord;
     ord.reserve((size_t)n);
     for (int k = 0; k < n; ++k) {
@@ -746,11 +733,35 @@ bool World::angularBisectLargestBlobWithTag(int tag, Vec2 axisDir) {
               });
     int half = n / 2;
     half = (int)clamp((float)half, 3.f, (float)(n - 3));
+
+    int bestStart = 0;
+    float bestScore = -1e30f;
+    for (int start = 0; start < n; ++start) {
+        Vec2 aMean{0.f, 0.f};
+        Vec2 bMean{0.f, 0.f};
+        for (int i = 0; i < half; ++i) {
+            const int gi = ord[(size_t)((start + i) % n)].second;
+            aMean += sb.points[(size_t)gi].pos;
+        }
+        for (int i = half; i < n; ++i) {
+            const int gi = ord[(size_t)((start + i) % n)].second;
+            bMean += sb.points[(size_t)gi].pos;
+        }
+        aMean *= (1.f / (float)half);
+        bMean *= (1.f / (float)(n - half));
+        const Vec2 sep = bMean - aMean;
+        float score = sep.lenSq() > 1e-8f ? std::abs(dot(sep.normalized(), cutNormal)) : 0.f;
+        if (score > bestScore) {
+            bestScore = score;
+            bestStart = start;
+        }
+    }
+
     std::vector<int> A, B;
     A.reserve((size_t)half);
-    for (int k = 0; k < half; ++k) A.push_back(ord[(size_t)k].second);
-    for (int k = half; k < n; ++k) B.push_back(ord[(size_t)k].second);
-    if ((int)A.size() < 3 || (int)B.size() < 3) return false;
+    B.reserve((size_t)(n - half));
+    for (int i = 0; i < half; ++i) A.push_back(ord[(size_t)((bestStart + i) % n)].second);
+    for (int i = half; i < n; ++i) B.push_back(ord[(size_t)((bestStart + i) % n)].second);
     return tryHalves(A, B);
 }
 

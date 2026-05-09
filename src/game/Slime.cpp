@@ -741,8 +741,14 @@ void Slime::update(float dt, World& world, const Vec2& aimWorld, bool jumpHeld, 
 
     // ----- Eye physics: virtual point-masses pulled toward blob anchors. -----
     SoftBody* blob = nullptr;
+    int bestPointCount = -1;
     for (auto& sb : world.softBodies()) {
-        if (sb->tag == myTag_) { blob = sb.get(); break; }
+        if (sb->tag != myTag_) continue;
+        const int count = (int)sb->points.size();
+        if (count > bestPointCount) {
+            bestPointCount = count;
+            blob = sb.get();
+        }
     }
     if (blob && (int)blob->points.size() > 4) {
         const int n = (int)blob->points.size();
