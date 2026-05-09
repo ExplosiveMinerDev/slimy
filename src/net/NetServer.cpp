@@ -183,8 +183,10 @@ bool Server::start(uint16_t port, uint32_t serverBuild) {
         return false;
     }
     lastTickStamp_ = Room::clock::now();
-    std::printf("[server] hub listening on UDP *:%u  (max peers %d, max rooms %d, %d/room)\n",
-                (unsigned)port, kMaxPeers, kMaxRooms, kMaxPlayers);
+    std::printf(
+        "[server] hub listening on UDP *:%u  protocol %u  (must match client; max peers %d, rooms "
+        "%d, %d/room)\n",
+        (unsigned)port, (unsigned)kProtocolVersion, kMaxPeers, kMaxRooms, kMaxPlayers);
     return true;
 }
 
@@ -267,8 +269,11 @@ void Server::onReceive(_ENetPeer* peer, const uint8_t* data, size_t len) {
             if (len < sizeof(ClientHelloMsg)) return;
             const auto* h = reinterpret_cast<const ClientHelloMsg*>(data);
             if (h->protocolVersion != kProtocolVersion) {
-                std::printf("[server] hello: bad protocol version %u (we run %u) — kicking\n",
-                            (unsigned)h->protocolVersion, (unsigned)kProtocolVersion);
+                std::printf(
+                    "[server] hello: client protocol %u but this server is %u — replace "
+                    "slimyjourney_server.exe with the one from the same build as the client, then "
+                    "restart\n",
+                    (unsigned)h->protocolVersion, (unsigned)kProtocolVersion);
                 enet_peer_disconnect_later(peer, 0);
             }
             break;
@@ -280,7 +285,8 @@ void Server::onReceive(_ENetPeer* peer, const uint8_t* data, size_t len) {
             if (len < sizeof(ClientCreateRoomMsg)) return;
             const auto* m = reinterpret_cast<const ClientCreateRoomMsg*>(data);
             if (len < sizeof(ClientCreateRoomMsg) + (size_t)m->nameLen) return;
-            handleCreateRoom(peer, data + sizeof(ClientCreateRoomMsg), m->nameLen);
+            handleCreateRoom(peer, data + sizeof(ClientCreateRoomMsg), m->nameLen,
+                             m->maxPlayers, m->optionsFlags);
             break;
         }
         case MsgType::ClientJoinRoom: {
@@ -310,7 +316,8 @@ void Server::handleListRooms(_ENetPeer* peer) {
     sendRoomListTo(peer);
 }
 
-void Server::handleCreateRoom(_ENetPeer* peer, const uint8_t* name, uint8_t nameLen) {
+void Server::handleCreateRoom(_ENetPeer* peer, const uint8_t* name, uint8_t nameLen,
+                              int maxPlayers, uint8_t optionsFlags) {
     auto pIt = peers_.find(peer);
     if (pIt == peers_.end()) return;
     if (!pIt->second.inLobby) {
@@ -327,7 +334,9 @@ void Server::handleCreateRoom(_ENetPeer* peer, const uint8_t* name, uint8_t name
     }
     std::string n((const char*)name, (size_t)nameLen);
     uint32_t rid = nextRoomId_++;
-    auto room = std::make_unique<Room>(rid, std::move(n));
+    auto room = std::make_unique<Room>(rid, std::move(n),
+                                       std::clamp(maxPlayers, 1, kMaxPlayers),
+                                       optionsFlags);
     Room* rp = room.get();
     rooms_.emplace(rid, std::move(room));
 
@@ -393,7 +402,8 @@ void Server::handleClientInput(_ENetPeer* peer, const ClientInputMsg& m) {
     if (slot < 0) return;
     rp->setInput(slot, {m.aimX, m.aimY},
                  m.jumpHeld != 0, m.mergeHeld != 0, m.grabHeld != 0, m.respawnHeld != 0,
-                 m.gatherHeld != 0, m.shiftSplitClick != 0);
+                 m.gatherHeld != 0, m.shiftSplitClick != 0, m.switchFragmentClick != 0,
+                 m.colorIndex);
 }
 
 void Server::handleClientChat(_ENetPeer* peer, const uint8_t* pkt, size_t len) {
@@ -439,6 +449,7 @@ void Server::sendRoomListTo(_ENetPeer* peer) {
         info.nameLen = nameLen;
         info.playerCount = (uint8_t)r.playerCount();
         info.maxPlayers = (uint8_t)r.maxPlayers();
+        info.optionsFlags = r.optionsFlags();
         size_t off = buf.size();
         buf.resize(off + sizeof(info) + nameLen);
         std::memcpy(buf.data() + off, &info, sizeof(info));

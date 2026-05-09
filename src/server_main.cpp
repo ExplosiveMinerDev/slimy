@@ -104,6 +104,8 @@ int main(int argc, char** argv) {
 
     Server server;
     if (!server.start(port, serverBuild)) return 1;
+    std::printf("[server] using net protocol %u (client and server must match)\n",
+                (unsigned)kProtocolVersion);
 
     {
         const std::string pub = fetchPublicIPv4();
