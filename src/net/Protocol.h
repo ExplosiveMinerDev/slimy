@@ -15,9 +15,12 @@ constexpr int kMaxRoomNameBytes = 32;
 constexpr uint16_t kDefaultPort = 6543;
 /// Max simultaneous players per room.
 constexpr int kMaxPlayers = 8;
-/// Minimum convex-hull area (world²) to allow cutting a blob (Shift / spikes / damage).
-/// Replaces a fixed max fragment count — tiny shards cannot be split again.
+/// Target minimum area (world²) for a sustainable slime fragment after a split.
+/// Binary cuts (Shift / spikes / hull damage) require the **source** hull area to be at
+/// least ~2× this so both children stay near or above this size — avoids splitting a blob
+/// that is already "at the limit", and stops cycling tiny fragments by switching control.
 constexpr float kMinSlimeConvexAreaToSplit = 0.50f;
+constexpr float kMinParentConvexAreaForBinarySplit = kMinSlimeConvexAreaToSplit * 2.0f;
 /// Max simultaneous rooms hosted by one server hub.
 constexpr int kMaxRooms = 16;
 /// Max simultaneous TCP/ENet peers (lobby + all rooms). 16 * 8 plus headroom.

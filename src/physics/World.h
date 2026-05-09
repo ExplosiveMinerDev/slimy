@@ -28,6 +28,8 @@ public:
     void mergeSoftBodiesWithTag(int tag, float pressureTargetHint);
     /// Remove every soft body using `tag` (e.g. player disconnected).
     void removeSoftBodiesWithTag(int tag);
+    /// True if the controlled blob for `tag` has enough hull area for a binary split (Shift bisect).
+    bool canBinarySplitControlledBlob(int tag) const;
     /// Cut the largest tagged blob in half along a line through its centroid. `axisDir`
     /// is the direction the cut runs; default {1,0} splits top-half / bottom-half.
     bool splitLargestBlobWithTag(int tag, Vec2 axisDir = {0.f, 1.f});

@@ -902,7 +902,8 @@ void Slime::update(float dt, World& world, const Vec2& aimWorld, bool jumpHeld, 
         chargeBufferTimer_ = 0.f;
     }
 
-    if (shiftSplitClick && manualSplitCooldown_ <= 0.f && playerBlobCount(world, myTag_) > 0) {
+    if (shiftSplitClick && manualSplitCooldown_ <= 0.f && playerBlobCount(world, myTag_) > 0 &&
+        world.canBinarySplitControlledBlob(myTag_)) {
         Vec2 c = playerControlledCentroid(world, myTag_);
         if (world.playerSplitLargestBlobWithTag(myTag_, aimWorld - c)) {
             manualSplitCooldown_ = 0.22f;

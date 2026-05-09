@@ -722,6 +722,14 @@ void World::mergeSoftBodiesWithTag(int tag, float pressureTargetHint) {
     addSoftBody(std::move(merged));
 }
 
+bool World::canBinarySplitControlledBlob(int tag) const {
+    for (const auto& sb : softBodies_) {
+        if (sb->tag != tag || !sb->playerControlled) continue;
+        return sb->convexHullArea() >= pe::net::kMinParentConvexAreaForBinarySplit;
+    }
+    return false;
+}
+
 bool World::splitLargestBlobWithTag(int tag, Vec2 axisDir) {
     int bestIdx = -1;
     int bestCount = 0;
@@ -737,7 +745,7 @@ bool World::splitLargestBlobWithTag(int tag, Vec2 axisDir) {
     if (bestIdx < 0 || bestCount < 8) return false;
 
     SoftBody& sb = *softBodies_[(size_t)bestIdx];
-    if (sb.convexHullArea() < pe::net::kMinSlimeConvexAreaToSplit)
+    if (sb.convexHullArea() < pe::net::kMinParentConvexAreaForBinarySplit)
         return false;
     if (axisDir.lenSq() < 1e-8f) axisDir = {0.f, 1.f};
     Vec2 dir = axisDir.normalized();
@@ -788,7 +796,7 @@ bool World::angularBisectLargestBlobWithTag(int tag, Vec2 axisDir) {
     SoftBody& sb = *softBodies_[(size_t)bestIdx];
     const int n = (int)sb.points.size();
     if (n < 6) return false;
-    if (sb.convexHullArea() < pe::net::kMinSlimeConvexAreaToSplit)
+    if (sb.convexHullArea() < pe::net::kMinParentConvexAreaForBinarySplit)
         return false;
 
     Vec2 c = sb.centroid();
@@ -886,7 +894,7 @@ void World::tryBinarySplitDamagedBlob(int tag) {
 
         const int n = (int)sb.points.size();
         if (n < 10) continue;
-        if (sb.convexHullArea() < pe::net::kMinSlimeConvexAreaToSplit)
+        if (sb.convexHullArea() < pe::net::kMinParentConvexAreaForBinarySplit)
             continue;
 
         Vec2 c = sb.centroid();
