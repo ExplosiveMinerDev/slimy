@@ -71,7 +71,8 @@ void Room::removePeer(_ENetPeer* peer) {
     if (isEmpty()) lastEmptyStamp_ = clock::now();
 }
 
-void Room::setInput(int slot, Vec2 aim, bool jump, bool merge, bool grab, bool respawn) {
+void Room::setInput(int slot, Vec2 aim, bool jump, bool merge, bool grab, bool respawn,
+                    bool gather, bool shiftSplitClick) {
     if (slot < 0 || slot >= kMaxPlayers) return;
     Slot& s = slots_[(size_t)slot];
     if (!s.active) return;
@@ -80,6 +81,8 @@ void Room::setInput(int slot, Vec2 aim, bool jump, bool merge, bool grab, bool r
     s.mergeHeld = merge;
     s.grabHeld = grab;
     s.respawnHeld = respawn;
+    s.gatherHeld = gather;
+    if (shiftSplitClick) s.pendingShiftSplit = true;
 }
 
 void Room::tick(float elapsedSec) {
@@ -87,10 +90,22 @@ void Room::tick(float elapsedSec) {
 
     for (int i = 0; i < kMaxPlayers; ++i) {
         Slot& s = slots_[(size_t)i];
+        if (!s.active || !s.slimeAlive) continue;
+        if (s.pendingShiftSplit) {
+            const int tag = Slime::networkedPlayerBlobTag(i);
+            Vec2 c = Slime::playerMassCentroid(world_, tag);
+            world_.playerSplitLargestBlobWithTag(tag, s.aim - c);
+            s.pendingShiftSplit = false;
+        }
+    }
+
+    for (int i = 0; i < kMaxPlayers; ++i) {
+        Slot& s = slots_[(size_t)i];
         if (!s.active || !s.slimeAlive) {
             s.mergeHold = 0.f;
             s.mergeLatch = false;
             s.lastRespawnHeld = false;
+            s.pendingShiftSplit = false;
             continue;
         }
         if (s.mergeHeld) {
@@ -131,7 +146,8 @@ void Room::tick(float elapsedSec) {
         for (int i = 0; i < kMaxPlayers; ++i) {
             Slot& s = slots_[(size_t)i];
             if (!s.active || !s.slimeAlive) continue;
-            slimes_[(size_t)i].update(fixedDt, world_, s.aim, s.jumpHeld, s.grabHeld);
+            slimes_[(size_t)i].update(fixedDt, world_, s.aim, s.jumpHeld, s.grabHeld, s.gatherHeld,
+                                      false);
         }
         world_.step(fixedDt);
         for (int i = 0; i < kMaxPlayers; ++i) {

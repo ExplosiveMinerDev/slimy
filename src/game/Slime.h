@@ -69,7 +69,10 @@ public:
     /// aimWorld: world-space target the slime should jump toward (typically the mouse
     /// cursor position). Direction = (aimWorld − slime centroid). Up == −y.
     /// jumpHeld: charge while held, launch on release.
-    void update(float dt, World& world, const Vec2& aimWorld, bool jumpHeld, bool grabHeld = false);
+    /// gatherHeld: Ctrl — pull fragments toward mass centroid (multi-blob only).
+    /// shiftSplitClick: Shift+LMB edge — slice largest blob toward the mouse aim.
+    void update(float dt, World& world, const Vec2& aimWorld, bool jumpHeld, bool grabHeld = false,
+                bool gatherHeld = false, bool shiftSplitClick = false);
 
     bool grounded() const { return grounded_; }
     bool charging() const { return charging_; }
@@ -99,6 +102,7 @@ public:
     void embeddedSpikeDrawOffsets(const World& world, std::vector<Vec2>& outOffsets) const;
 
 private:
+    void applyFragmentGather(float dt, World& world, bool gatherHeld);
     void applySpikeHazard(float dt, World& world);
     void syncEmbeddedSpikes(float dt, const World& world);
     void updateGrabThrow(float dt, World& world, bool grabHeld);

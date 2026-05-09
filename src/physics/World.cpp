@@ -680,6 +680,85 @@ bool World::splitLargestBlobWithTag(int tag, Vec2 axisDir) {
     return true;
 }
 
+bool World::angularBisectLargestBlobWithTag(int tag, Vec2 axisDir) {
+    int bestIdx = -1;
+    int bestCount = 0;
+    for (size_t i = 0; i < softBodies_.size(); ++i) {
+        SoftBody& sb = *softBodies_[i];
+        if (sb.tag != tag) continue;
+        if ((int)sb.points.size() > bestCount) {
+            bestCount = (int)sb.points.size();
+            bestIdx = (int)i;
+        }
+    }
+    if (bestIdx < 0) return false;
+    SoftBody& sb = *softBodies_[(size_t)bestIdx];
+    const int n = (int)sb.points.size();
+    if (n < 6) return false;
+
+    Vec2 c = sb.centroid();
+    if (axisDir.lenSq() < 1e-8f) axisDir = {1.f, 0.f};
+    Vec2 dir = axisDir.normalized();
+    Vec2 cutNormal{-dir.y, dir.x};
+
+    std::vector<int> pos, neg;
+    pos.reserve((size_t)n);
+    neg.reserve((size_t)n);
+    for (int i = 0; i < n; ++i) {
+        const float s = dot(sb.points[(size_t)i].pos - c, cutNormal);
+        if (s >= 0.f) pos.push_back(i);
+        else neg.push_back(i);
+    }
+
+    auto tryHalves = [&](const std::vector<int>& A, const std::vector<int>& B) -> bool {
+        if ((int)A.size() < 3 || (int)B.size() < 3) return false;
+        SoftBody na = rebuildConvexFragment(sb, A);
+        SoftBody nb = rebuildConvexFragment(sb, B);
+        if (na.points.size() < 3 || nb.points.size() < 3) return false;
+        const float kick = 1.4f;
+        Vec2 ca = na.centroid();
+        Vec2 cb = nb.centroid();
+        Vec2 sep = cb - ca;
+        if (sep.lenSq() > 1e-8f) {
+            sep = sep * (1.f / sep.len());
+            for (auto& p : na.points) p.vel -= sep * kick;
+            for (auto& p : nb.points) p.vel += sep * kick;
+        }
+        removeSoftBodyAt((size_t)bestIdx);
+        addSoftBody(std::move(na));
+        addSoftBody(std::move(nb));
+        return true;
+    };
+
+    if ((int)pos.size() >= 3 && (int)neg.size() >= 3) {
+        if (tryHalves(pos, neg)) return true;
+    }
+
+    std::vector<std::pair<float, int>> ord;
+    ord.reserve((size_t)n);
+    for (int k = 0; k < n; ++k) {
+        Vec2 d = sb.points[(size_t)k].pos - c;
+        ord.push_back({std::atan2(d.y, d.x), k});
+    }
+    std::sort(ord.begin(), ord.end(),
+              [](const std::pair<float, int>& a, const std::pair<float, int>& b) {
+                  return a.first < b.first;
+              });
+    int half = n / 2;
+    half = (int)clamp((float)half, 3.f, (float)(n - 3));
+    std::vector<int> A, B;
+    A.reserve((size_t)half);
+    for (int k = 0; k < half; ++k) A.push_back(ord[(size_t)k].second);
+    for (int k = half; k < n; ++k) B.push_back(ord[(size_t)k].second);
+    if ((int)A.size() < 3 || (int)B.size() < 3) return false;
+    return tryHalves(A, B);
+}
+
+bool World::playerSplitLargestBlobWithTag(int tag, Vec2 axisDir) {
+    if (splitLargestBlobWithTag(tag, axisDir)) return true;
+    return angularBisectLargestBlobWithTag(tag, axisDir);
+}
+
 void World::tryBinarySplitDamagedBlob(int tag) {
     int tagCount = 0;
     for (const auto& sb : softBodies_) {

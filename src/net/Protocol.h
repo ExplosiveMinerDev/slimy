@@ -5,9 +5,9 @@
 
 namespace pe::net {
 
-constexpr uint32_t kProtocolVersion = 11;
+constexpr uint32_t kProtocolVersion = 12;
 /// Bump when shipping a new Windows client binary (must match server `--build` / manifest for auto-update).
-constexpr uint32_t kClientBuild = 14;
+constexpr uint32_t kClientBuild = 15;
 /// Max UTF-8 bytes per chat line (wire + UI clipping).
 constexpr int kMaxChatPayloadBytes = 96;
 /// Max UTF-8 bytes for a user-supplied room name.
@@ -73,6 +73,8 @@ struct ClientInputMsg {
     uint8_t mergeHeld;       // hold Enter / KP Enter — server mirrors solo merge timing
     uint8_t grabHeld;        // hold E — attract nearby crate/ball; release to throw (aim)
     uint8_t respawnHeld;     // hold R — server respawns slime at spawn (edge-triggered)
+    uint8_t gatherHeld;      // hold Ctrl — pull slime fragments toward mass centroid
+    uint8_t shiftSplitClick; // edge: Shift + LMB — split largest blob toward aim
 };
 
 /// Reliable client → server. Wire: `hdr` + `byteLen` + `byteLen` payload bytes (UTF-8).

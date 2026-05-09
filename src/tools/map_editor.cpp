@@ -123,6 +123,8 @@ int main() {
     Vec2 panMouseStartCanvas{};
 
     float accum = 0.f;
+    float enterHoldTest = 0.f;
+    bool enterMergeLatchTest = false;
 
     auto rebuildWorld = [&]() {
         world.clear();
@@ -294,7 +296,9 @@ int main() {
                 rebuildWorld();
                 slime.spawn(world, pe::kSpawnPos);
                 accum = 0.f;
-                status = "TEST — Esc = Edit   Space = jump   E = grab";
+                enterHoldTest = 0.f;
+                enterMergeLatchTest = false;
+                status = "TEST — Esc = Edit   Space = jump   Shift+LMB = split   Ctrl = gather   Enter = merge";
             }
         } else {
             // Test mode: same controls as solo (no chat).
@@ -302,6 +306,8 @@ int main() {
                 mode = UiMode::Editing;
                 rebuildWorld();
                 sel = -1;
+                enterHoldTest = 0.f;
+                enterMergeLatchTest = false;
                 status = "Edit mode";
                 renderer.camera.target = pe::kSpawnPos + Vec2{0.f, 4.f};
                 renderer.camera.zoom = 14.f;
@@ -309,16 +315,37 @@ int main() {
             }
 
             Vec2 mouseWorld = renderer.screenToWorld(mouseCanvas);
-            const bool jumpHeld =
-                (IsKeyDown(KEY_SPACE) || IsMouseButtonDown(MOUSE_BUTTON_LEFT));
+            const bool shiftDown =
+                IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
+            const bool gatherHeld =
+                IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL);
+            bool jumpHeld =
+                (IsKeyDown(KEY_SPACE) ||
+                 (IsMouseButtonDown(MOUSE_BUTTON_LEFT) && !shiftDown));
+            const bool shiftSplitClick =
+                shiftDown && IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
             const bool grabHeld = IsKeyDown(KEY_E);
+
+            bool enterDown =
+                IsKeyDown(KEY_ENTER) || IsKeyDown(KEY_KP_ENTER);
+            if (enterDown) {
+                enterHoldTest += frameTime;
+                if (!enterMergeLatchTest && enterHoldTest >= 0.52f) {
+                    world.mergeSoftBodiesWithTag(slime.myTag(), slime.basePressureTarget());
+                    enterMergeLatchTest = true;
+                }
+            } else {
+                enterHoldTest = 0.f;
+                enterMergeLatchTest = false;
+            }
 
             int steps = 0;
             while (accum >= kFixedDt && steps < 6) {
                 for (auto& bp : world.bodies()) {
                     if (bp->type == pe::BodyType::Dynamic) bp->grabOwnerTag = 0;
                 }
-                slime.update(kFixedDt, world, mouseWorld, jumpHeld, grabHeld);
+                slime.update(kFixedDt, world, mouseWorld, jumpHeld, grabHeld, gatherHeld,
+                              shiftSplitClick);
                 world.step(kFixedDt);
                 world.tryBinarySplitDamagedBlob(slime.myTag());
                 accum -= kFixedDt;

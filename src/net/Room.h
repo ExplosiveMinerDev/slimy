@@ -29,6 +29,9 @@ public:
         bool mergeHeld = false;
         bool grabHeld = false;
         bool respawnHeld = false;
+        bool gatherHeld = false;
+        /// Latest frame requested Shift+LMB split (consumed once per tick).
+        bool pendingShiftSplit = false;
         // Server-side state mirroring solo merge timing.
         float mergeHold = 0.f;
         bool mergeLatch = false;
@@ -59,7 +62,8 @@ public:
     int slotForPeer(_ENetPeer* peer) const;
 
     /// Apply latest received input from a slot.
-    void setInput(int slot, Vec2 aim, bool jump, bool merge, bool grab, bool respawn);
+    void setInput(int slot, Vec2 aim, bool jump, bool merge, bool grab, bool respawn,
+                    bool gather, bool shiftSplitClick);
 
     /// Advance the simulation by `elapsedSec` (consumed via fixed-dt accumulator).
     void tick(float elapsedSec);

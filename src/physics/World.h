@@ -31,6 +31,9 @@ public:
     /// Cut the largest tagged blob in half along a line through its centroid. `axisDir`
     /// is the direction the cut runs; default {1,0} splits top-half / bottom-half.
     bool splitLargestBlobWithTag(int tag, Vec2 axisDir = {0.f, 1.f});
+    /// Player Shift+click: slice largest fragment toward `axisDir` (aim − centroid).
+    /// Uses spring-cut when possible, otherwise convex bisection so tiny blobs still split.
+    bool playerSplitLargestBlobWithTag(int tag, Vec2 axisDir);
 
     const std::vector<std::unique_ptr<Body>>& bodies() const { return bodies_; }
     const std::vector<std::unique_ptr<SoftBody>>& softBodies() const { return softBodies_; }
@@ -43,6 +46,8 @@ private:
     std::vector<Manifold> manifolds_;
 
     uint32_t nextId_ = 1;
+
+    bool angularBisectLargestBlobWithTag(int tag, Vec2 axisDir);
 
     void processSoftBodyConnectivity();
     void removeSoftBodyAt(size_t index);

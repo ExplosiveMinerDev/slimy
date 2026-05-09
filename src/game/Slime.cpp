@@ -150,6 +150,26 @@ int Slime::playerBlobCount(const World& world, int tag) {
     return n;
 }
 
+void Slime::applyFragmentGather(float dt, World& world, bool gatherHeld) {
+    if (!gatherHeld) return;
+    if (playerBlobCount(world, myTag_) <= 1) return;
+    Vec2 c = playerMassCentroid(world, myTag_);
+    constexpr float kGather = 92.f;
+    constexpr float kFarCap = 8.f;
+    for (auto& sbPtr : world.softBodies()) {
+        SoftBody& sb = *sbPtr;
+        if (sb.tag != myTag_) continue;
+        for (auto& p : sb.points) {
+            Vec2 d = c - p.pos;
+            float len = d.len();
+            if (len < 0.018f) continue;
+            Vec2 dir = d * (1.f / len);
+            float w = std::min(len, kFarCap);
+            p.vel += dir * (kGather * dt * w);
+        }
+    }
+}
+
 void Slime::applySpikeHazard(float dt, World& world) {
     constexpr float kMinPen = 0.019f;
     constexpr int kMaxEmbedded = 8;
@@ -604,9 +624,17 @@ void Slime::updateGrabThrow(float dt, World& world, bool grabHeld) {
     held->grabOwnerTag = myTag_;
 }
 
-void Slime::update(float dt, World& world, const Vec2& aimWorld, bool jumpHeld, bool grabHeld) {
+void Slime::update(float dt, World& world, const Vec2& aimWorld, bool jumpHeld, bool grabHeld,
+                   bool gatherHeld, bool shiftSplitClick) {
     spikeSplitCd_ = std::max(0.f, spikeSplitCd_ - dt);
     jumpCooldownRemaining_ = std::max(0.f, jumpCooldownRemaining_ - dt);
+
+    if (shiftSplitClick && playerBlobCount(world, myTag_) > 0) {
+        Vec2 c = playerMassCentroid(world, myTag_);
+        world.playerSplitLargestBlobWithTag(myTag_, aimWorld - c);
+    }
+
+    applyFragmentGather(dt, world, gatherHeld);
     applySpikeHazard(dt, world);
     syncEmbeddedSpikes(dt, world);
 

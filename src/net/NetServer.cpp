@@ -392,7 +392,8 @@ void Server::handleClientInput(_ENetPeer* peer, const ClientInputMsg& m) {
     int slot = rp->slotForPeer(peer);
     if (slot < 0) return;
     rp->setInput(slot, {m.aimX, m.aimY},
-                 m.jumpHeld != 0, m.mergeHeld != 0, m.grabHeld != 0, m.respawnHeld != 0);
+                 m.jumpHeld != 0, m.mergeHeld != 0, m.grabHeld != 0, m.respawnHeld != 0,
+                 m.gatherHeld != 0, m.shiftSplitClick != 0);
 }
 
 void Server::handleClientChat(_ENetPeer* peer, const uint8_t* pkt, size_t len) {

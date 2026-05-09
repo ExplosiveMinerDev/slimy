@@ -89,7 +89,7 @@ public:
 
     /// In-room input + chat.
     void sendInput(Vec2 aimWorld, bool jumpHeld, bool mergeHeld, bool grabHeld,
-                   bool respawnHeld);
+                   bool respawnHeld, bool gatherHeld, bool shiftSplitClick);
     void sendChat(const std::string& utf8);
 
     void tickChatBubbles(float dt);

@@ -277,7 +277,7 @@ void Client::leaveRoom() {
 }
 
 void Client::sendInput(Vec2 aimWorld, bool jumpHeld, bool mergeHeld, bool grabHeld,
-                       bool respawnHeld) {
+                       bool respawnHeld, bool gatherHeld, bool shiftSplitClick) {
     if (!isConnected() || state_ != ClientState::InRoom) return;
     ClientInputMsg m{};
     m.hdr.type = (uint8_t)MsgType::ClientInput;
@@ -287,6 +287,8 @@ void Client::sendInput(Vec2 aimWorld, bool jumpHeld, bool mergeHeld, bool grabHe
     m.mergeHeld = (uint8_t)(mergeHeld ? 1 : 0);
     m.grabHeld = (uint8_t)(grabHeld ? 1 : 0);
     m.respawnHeld = (uint8_t)(respawnHeld ? 1 : 0);
+    m.gatherHeld = (uint8_t)(gatherHeld ? 1 : 0);
+    m.shiftSplitClick = (uint8_t)(shiftSplitClick ? 1 : 0);
     // Unreliable @ ~60 Hz — reliable input queued behind ACKs and felt like huge "ping".
     ENetPacket* pk = enet_packet_create(&m, sizeof(m), 0);
     enet_peer_send(peer_, 0, pk);

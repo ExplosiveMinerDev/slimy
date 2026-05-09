@@ -151,8 +151,16 @@ int runSinglePlayer(bool reuseWindow = false) {
         Vec2 mouseCanvas = renderer.mouseInCanvas();
         Vec2 mouseWorld = renderer.screenToWorld(mouseCanvas);
         const bool chatTyping = chatOpen;
+        const bool shiftDown =
+            IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
+        const bool gatherHeld =
+            (IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL)) && !chatTyping;
         bool jumpHeld =
-            (IsKeyDown(KEY_SPACE) || IsMouseButtonDown(MOUSE_BUTTON_LEFT)) && !chatTyping;
+            (IsKeyDown(KEY_SPACE) ||
+             (IsMouseButtonDown(MOUSE_BUTTON_LEFT) && !shiftDown)) &&
+            !chatTyping;
+        const bool shiftSplitClick =
+            shiftDown && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && !chatTyping;
         const bool grabHeld = IsKeyDown(KEY_E) && !chatTyping;
 
         bool enterDown =
@@ -202,7 +210,8 @@ int runSinglePlayer(bool reuseWindow = false) {
             for (auto& bp : world.bodies()) {
                 if (bp->type == BodyType::Dynamic) bp->grabOwnerTag = 0;
             }
-            slime.update(fixedDt, world, mouseWorld, jumpHeld, grabHeld);
+            slime.update(fixedDt, world, mouseWorld, jumpHeld, grabHeld, gatherHeld,
+                          shiftSplitClick);
             world.step(fixedDt);
             world.tryBinarySplitDamagedBlob(slime.myTag());
             accumulator -= fixedDt;
@@ -532,12 +541,20 @@ bool runOnlineSession(const std::string& host, uint16_t port, std::string& errOu
         Vec2 mouseCanvas = renderer.mouseInCanvas();
         Vec2 mouseWorld = renderer.screenToWorld(mouseCanvas);
         const bool chatTyping = chatOpen;
+        const bool shiftDown =
+            IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
+        const bool gatherHeld =
+            (IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL)) && !chatTyping;
         bool jumpHeld =
-            (IsKeyDown(KEY_SPACE) || IsMouseButtonDown(MOUSE_BUTTON_LEFT)) && !chatTyping;
+            (IsKeyDown(KEY_SPACE) ||
+             (IsMouseButtonDown(MOUSE_BUTTON_LEFT) && !shiftDown)) &&
+            !chatTyping;
         const bool mergeHeld =
             (IsKeyDown(KEY_ENTER) || IsKeyDown(KEY_KP_ENTER)) && !chatTyping;
         const bool grabHeld = IsKeyDown(KEY_E) && !chatTyping;
         const bool respawnHeld = IsKeyDown(KEY_R) && !chatTyping;
+        const bool shiftSplitClick =
+            shiftDown && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && !chatTyping;
 
         float wheel = GetMouseWheelMove();
         if (wheel != 0.f) {
@@ -562,7 +579,8 @@ bool runOnlineSession(const std::string& host, uint16_t port, std::string& errOu
             panStart = m;
         }
 
-        client.sendInput(mouseWorld, jumpHeld, mergeHeld, grabHeld, respawnHeld);
+        client.sendInput(mouseWorld, jumpHeld, mergeHeld, grabHeld, respawnHeld, gatherHeld,
+                         shiftSplitClick);
         client.tickChatBubbles(frameTime);
         client.advanceInterpolation();
         client.updateNetTrail(frameTime);
