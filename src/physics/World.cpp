@@ -13,14 +13,6 @@ namespace {
 
 thread_local std::vector<std::vector<int>> tlsConnComps;
 
-static int countSoftBodiesWithTag(const std::vector<std::unique_ptr<SoftBody>>& bodies,
-                                  int tag) {
-    int n = 0;
-    for (const auto& sb : bodies)
-        if (sb->tag == tag) ++n;
-    return n;
-}
-
 /// Fill `out` with vertex indices per connected component (spring graph). Reuses TLS scratch;
 /// avoids allocating fresh vectors every physics step (idle servers still ran this for each blob).
 void connectedComponentsInto(const SoftBody& sb, std::vector<std::vector<int>>& out) {
@@ -731,8 +723,6 @@ void World::mergeSoftBodiesWithTag(int tag, float pressureTargetHint) {
 }
 
 bool World::splitLargestBlobWithTag(int tag, Vec2 axisDir) {
-    if (countSoftBodiesWithTag(softBodies_, tag) >= pe::net::kMaxSlimeFragmentsPerPlayer)
-        return false;
     int bestIdx = -1;
     int bestCount = 0;
     for (size_t i = 0; i < softBodies_.size(); ++i) {
@@ -747,6 +737,8 @@ bool World::splitLargestBlobWithTag(int tag, Vec2 axisDir) {
     if (bestIdx < 0 || bestCount < 8) return false;
 
     SoftBody& sb = *softBodies_[(size_t)bestIdx];
+    if (sb.convexHullArea() < pe::net::kMinSlimeConvexAreaToSplit)
+        return false;
     if (axisDir.lenSq() < 1e-8f) axisDir = {0.f, 1.f};
     Vec2 dir = axisDir.normalized();
     Vec2 cutNormal{-dir.y, dir.x};
@@ -781,8 +773,6 @@ bool World::splitLargestBlobWithTag(int tag, Vec2 axisDir) {
 }
 
 bool World::angularBisectLargestBlobWithTag(int tag, Vec2 axisDir) {
-    if (countSoftBodiesWithTag(softBodies_, tag) >= pe::net::kMaxSlimeFragmentsPerPlayer)
-        return false;
     int bestIdx = -1;
     int bestCount = 0;
     for (size_t i = 0; i < softBodies_.size(); ++i) {
@@ -798,6 +788,8 @@ bool World::angularBisectLargestBlobWithTag(int tag, Vec2 axisDir) {
     SoftBody& sb = *softBodies_[(size_t)bestIdx];
     const int n = (int)sb.points.size();
     if (n < 6) return false;
+    if (sb.convexHullArea() < pe::net::kMinSlimeConvexAreaToSplit)
+        return false;
 
     Vec2 c = sb.centroid();
     if (axisDir.lenSq() < 1e-8f) axisDir = {1.f, 0.f};
@@ -894,6 +886,8 @@ void World::tryBinarySplitDamagedBlob(int tag) {
 
         const int n = (int)sb.points.size();
         if (n < 10) continue;
+        if (sb.convexHullArea() < pe::net::kMinSlimeConvexAreaToSplit)
+            continue;
 
         Vec2 c = sb.centroid();
         std::vector<std::pair<float, int>> ord;
