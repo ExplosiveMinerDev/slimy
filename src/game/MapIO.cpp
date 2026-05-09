@@ -35,6 +35,10 @@ bool parseTagToken(const std::string& tok, int& outTag, std::string* errOut) {
         outTag = Slime::mapTestRockTag;
         return true;
     }
+    if (tok == "vent") {
+        outTag = Slime::airVentTag;
+        return true;
+    }
     try {
         outTag = std::stoi(tok);
         return true;
@@ -49,6 +53,7 @@ const char* tagNameForSave(int tag) {
     if (tag == Slime::stoneTag) return "stone";
     if (tag == Slime::platformTag) return "platform";
     if (tag == Slime::mapTestRockTag) return "redrock";
+    if (tag == Slime::airVentTag) return "vent";
     return "platform";
 }
 
@@ -107,7 +112,7 @@ bool writeSolidMapFile(const std::string& path, const std::vector<SolidMapEntry>
     }
     f << "# SlimyJourney solid map (.sjmap)\n";
     f << "# Lines:  box  centerX  centerY  halfW  halfH  tag\n";
-    f << "# tag: grass | stone | platform  (or integer)\n";
+    f << "# tag: grass | stone | platform | redrock | vent  (or integer)\n";
     f << std::fixed << std::setprecision(3);
     for (const auto& e : in) {
         f << "box " << e.pos.x << ' ' << e.pos.y << ' ' << e.halfW << ' ' << e.halfH << ' '

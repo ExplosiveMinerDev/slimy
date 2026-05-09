@@ -95,6 +95,123 @@ inline float rnd11() {
 }
 inline float rnd01() { return rnd11() * 0.5f + 0.5f; }
 
+float softBodyMass(const SoftBody& sb) {
+    float m = 0.f;
+    for (const auto& p : sb.points) m += p.mass;
+    return m;
+}
+
+float taggedSoftBodyMass(const World& world, int tag) {
+    float m = 0.f;
+    for (const auto& sb : world.softBodies()) {
+        if (sb->tag != tag) continue;
+        m += softBodyMass(*sb);
+    }
+    return m;
+}
+
+float softBodyApproxRadius(const SoftBody& sb) {
+    Vec2 c = sb.centroid();
+    float r = 0.f;
+    for (const auto& p : sb.points) r = std::max(r, distance(p.pos, c));
+    return std::max(r, 0.05f);
+}
+
+Vec2 rotateDir(Vec2 v, float a) {
+    const float c = std::cos(a);
+    const float s = std::sin(a);
+    return {v.x * c - v.y * s, v.x * s + v.y * c};
+}
+
+bool segmentsCross(Vec2 a, Vec2 b, Vec2 c, Vec2 d) {
+    const Vec2 r = b - a;
+    const Vec2 s = d - c;
+    const float den = cross(r, s);
+    if (std::abs(den) < 1e-6f) return false;
+    const float u = cross(c - a, r) / den;
+    const float t = cross(c - a, s) / den;
+    return t > 0.02f && t < 0.98f && u > 0.02f && u < 0.98f;
+}
+
+bool gatherLineBlockedBy(Body& b, Vec2 a, Vec2 c) {
+    if (b.type != BodyType::Static) return false;
+    if (b.tag == Slime::spikeHazardTag || b.tag == Slime::airVentTag) return false;
+
+    if (b.shape.type == ShapeType::Circle) {
+        const Vec2 ac = c - a;
+        const float l2 = ac.lenSq();
+        if (l2 < 1e-8f) return false;
+        const float t = std::clamp(dot(b.pos - a, ac) / l2, 0.f, 1.f);
+        return distanceSq(a + ac * t, b.pos) < b.shape.radius * b.shape.radius;
+    }
+
+    const int n = (int)b.shape.vertices.size();
+    if (n < 3) return false;
+    for (int i = 0; i < n; ++i) {
+        const Vec2 p0 = b.localToWorld(b.shape.vertices[(size_t)i]);
+        const Vec2 p1 = b.localToWorld(b.shape.vertices[(size_t)((i + 1) % n)]);
+        if (segmentsCross(a, c, p0, p1)) return true;
+    }
+    Vec2 nrm, closest;
+    float depth = 0.f;
+    const Vec2 mid = (a + c) * 0.5f;
+    return pointVsBody(mid, b, nrm, depth, closest);
+}
+
+bool gatherLineBlocked(const World& world, Vec2 a, Vec2 b) {
+    for (const auto& bp : world.bodies()) {
+        if (gatherLineBlockedBy(*bp, a, b)) return true;
+    }
+    return false;
+}
+
+Vec2 gatherPathDirection(const World& world, Vec2 from, Vec2 to) {
+    Vec2 direct = to - from;
+    const float dist = direct.len();
+    if (dist < 1e-4f) return {0.f, 0.f};
+    direct *= (1.f / dist);
+    if (!gatherLineBlocked(world, from, to)) return direct;
+
+    constexpr float kProbe = 3.1f;
+    constexpr float angles[] = {
+        -0.70f, 0.70f, -1.18f, 1.18f, -1.65f, 1.65f, -2.25f, 2.25f
+    };
+    Vec2 best = direct;
+    float bestScore = 1e30f;
+    for (float a : angles) {
+        Vec2 cand = rotateDir(direct, a).normalized();
+        if (cand.lenSq() < 1e-8f) continue;
+        Vec2 probe = from + cand * std::min(kProbe, std::max(1.1f, dist * 0.55f));
+        if (gatherLineBlocked(world, from, probe)) continue;
+        const float score = distanceSq(probe, to) + std::max(0.f, cand.y) * 0.45f;
+        if (score < bestScore) {
+            bestScore = score;
+            best = cand;
+        }
+    }
+    if (bestScore < 1e29f) return best;
+    return (direct * 0.35f + Vec2{0.f, -1.f}).normalized();
+}
+
+void steerAwayFromNearbySolids(PointMass& p, const World& world, float dt) {
+    constexpr float kSkin = 0.42f;
+    for (const auto& bp : world.bodies()) {
+        Body& b = *bp;
+        if (b.type != BodyType::Static) continue;
+        if (b.tag == Slime::spikeHazardTag || b.tag == Slime::airVentTag) continue;
+        Vec2 closest, dirToSurface;
+        float signedDist = 0.f;
+        if (!closestSurfacePointToBody(p.pos, b, closest, signedDist, dirToSurface)) continue;
+        if (signedDist > kSkin || signedDist < -0.08f) continue;
+        Vec2 away = -dirToSurface;
+        const float len = away.len();
+        if (len < 1e-6f) continue;
+        away *= (1.f / len);
+        const float t = 1.f - std::clamp((signedDist + 0.08f) / (kSkin + 0.08f), 0.f, 1.f);
+        p.vel += away * (18.f * t * dt);
+    }
+}
+
 } // namespace
 
 void Slime::spawn(World& world, const Vec2& pos, float radius, int segments, int tag) {
@@ -109,6 +226,7 @@ void Slime::spawn(World& world, const Vec2& pos, float radius, int segments, int
     sb.perimeterTearRatio = 0.f;
     sb.braceTearRatio = 0.f;
     sb.tag = myTag_;
+    sb.colorIndex = colorIndex_;
     SoftBody* blob = world.addSoftBody(std::move(sb));
     basePressure_ = blob->pressureTarget;
 
@@ -127,6 +245,44 @@ void Slime::spawn(World& world, const Vec2& pos, float radius, int segments, int
     wasGrabHeld_ = false;
     trailEmitCd_ = 0.f;
     jumpCooldownRemaining_ = 0.f;
+    manualSplitCooldown_ = 0.f;
+}
+
+void Slime::setColorIndex(World& world, uint8_t colorIndex) {
+    colorIndex_ = (uint8_t)(colorIndex % 8);
+    for (auto& sb : world.softBodies()) {
+        if (sb->tag == myTag_) sb->colorIndex = colorIndex_;
+    }
+}
+
+void Slime::cycleColor(World& world) {
+    setColorIndex(world, (uint8_t)(colorIndex_ + 1));
+}
+
+bool Slime::cycleControlledFragment(World& world, int dir) {
+    std::vector<SoftBody*> blobs;
+    for (auto& sb : world.softBodies()) {
+        if (sb->tag == myTag_) blobs.push_back(sb.get());
+    }
+    if (blobs.size() <= 1) return false;
+    std::sort(blobs.begin(), blobs.end(), [](const SoftBody* a, const SoftBody* b) {
+        const Vec2 ca = a->centroid();
+        const Vec2 cb = b->centroid();
+        if (std::abs(ca.x - cb.x) > 0.001f) return ca.x < cb.x;
+        return ca.y < cb.y;
+    });
+
+    int current = 0;
+    for (int i = 0; i < (int)blobs.size(); ++i) {
+        if (blobs[(size_t)i]->playerControlled) {
+            current = i;
+            break;
+        }
+    }
+    const int n = (int)blobs.size();
+    int next = (current + (dir >= 0 ? 1 : -1) + n) % n;
+    for (int i = 0; i < n; ++i) blobs[(size_t)i]->playerControlled = (i == next);
+    return true;
 }
 
 Vec2 Slime::playerMassCentroid(const World& world, int tag) {
@@ -150,22 +306,116 @@ int Slime::playerBlobCount(const World& world, int tag) {
     return n;
 }
 
+Vec2 Slime::playerControlledCentroid(const World& world, int tag) {
+    Vec2 c{0, 0};
+    float m = 0.f;
+    for (auto& sb : world.softBodies()) {
+        if (sb->tag != tag || !sb->playerControlled) continue;
+        float tm = 0.f;
+        for (auto& p : sb->points) tm += p.mass;
+        if (tm < 1e-8f) continue;
+        c += sb->centroid() * tm;
+        m += tm;
+    }
+    return m > 1e-8f ? c / m : playerMassCentroid(world, tag);
+}
+
 void Slime::applyFragmentGather(float dt, World& world, bool gatherHeld) {
     if (!gatherHeld) return;
     if (playerBlobCount(world, myTag_) <= 1) return;
-    Vec2 c = playerMassCentroid(world, myTag_);
-    constexpr float kGather = 92.f;
-    constexpr float kFarCap = 8.f;
+    Vec2 c = playerControlledCentroid(world, myTag_);
+    constexpr float kResponse = 4.4f;
+    constexpr float kCloseEase = 1.55f;
+    constexpr float kMaxSpeed = 6.2f;
     for (auto& sbPtr : world.softBodies()) {
         SoftBody& sb = *sbPtr;
         if (sb.tag != myTag_) continue;
+        if (sb.playerControlled) continue;
+        const Vec2 fc = sb.centroid();
+        const Vec2 dir = gatherPathDirection(world, fc, c);
+        const float dist = distance(fc, c);
+        const float speed = std::min(kMaxSpeed, std::max(0.65f, dist * 1.30f));
+        const float ease = std::clamp(dist / kCloseEase, 0.25f, 1.f);
+        const Vec2 desiredVel = dir * (speed * ease);
+        const float blend = std::min(1.f, kResponse * dt);
         for (auto& p : sb.points) {
-            Vec2 d = c - p.pos;
-            float len = d.len();
-            if (len < 0.018f) continue;
-            Vec2 dir = d * (1.f / len);
-            float w = std::min(len, kFarCap);
-            p.vel += dir * (kGather * dt * w);
+            const Vec2 localCohesion = (fc - p.pos) * 0.30f;
+            Vec2 targetVel = desiredVel + localCohesion;
+            p.vel += (targetVel - p.vel) * blend;
+            steerAwayFromNearbySolids(p, world, dt);
+            const float v2 = p.vel.lenSq();
+            const float maxV = kMaxSpeed + 1.8f;
+            if (v2 > maxV * maxV) p.vel *= maxV / std::sqrt(v2);
+        }
+    }
+}
+
+void Slime::mergeGatheredFragmentsOnContact(World& world, bool gatherHeld) {
+    if (!gatherHeld) return;
+    SoftBody* mainBlob = nullptr;
+    float bestMass = -1.f;
+    for (auto& sbPtr : world.softBodies()) {
+        SoftBody& sb = *sbPtr;
+        if (sb.tag != myTag_ || !sb.playerControlled) continue;
+        const float m = softBodyMass(sb);
+        if (m > bestMass) {
+            bestMass = m;
+            mainBlob = &sb;
+        }
+    }
+    if (!mainBlob) return;
+
+    const Vec2 mainC = mainBlob->centroid();
+    const float mainR = softBodyApproxRadius(*mainBlob);
+    for (auto& sbPtr : world.softBodies()) {
+        SoftBody& sb = *sbPtr;
+        if (sb.tag != myTag_ || sb.playerControlled) continue;
+        const float touchDist = (mainR + softBodyApproxRadius(sb)) * 1.02f;
+        if (distanceSq(mainC, sb.centroid()) <= touchDist * touchDist) {
+            world.mergeSoftBodiesWithTag(myTag_, basePressure_);
+            return;
+        }
+    }
+}
+
+void Slime::applyEnvironmentProps(float dt, World& world) {
+    for (const auto& propPtr : world.bodies()) {
+        Body& prop = *propPtr;
+        if (prop.tag != airVentTag) continue;
+
+        AABB box = prop.aabb();
+        if (prop.tag == airVentTag) {
+            const float topY = box.min.y;
+            const float columnTop = topY - 5.8f;
+            const float halfW = std::max(0.45f, (box.max.x - box.min.x) * 0.62f);
+            const float cx = (box.min.x + box.max.x) * 0.5f;
+
+            for (auto& sbPtr : world.softBodies()) {
+                SoftBody& sb = *sbPtr;
+                if (sb.tag != myTag_) continue;
+                for (auto& p : sb.points) {
+                    if (p.pos.y < columnTop || p.pos.y > topY + 0.45f) continue;
+                    const float dx = std::abs(p.pos.x - cx);
+                    if (dx > halfW) continue;
+                    const float side = 1.f - std::clamp(dx / halfW, 0.f, 1.f);
+                    const float height = 1.f - std::clamp((p.pos.y - columnTop) / (topY - columnTop), 0.f, 1.f);
+                    const float lift = (0.42f + side * 0.58f) * (0.62f + height * 0.38f);
+                    p.vel.y -= 32.f * lift * dt;
+                    p.vel.x += std::sin(p.pos.y * 3.1f + p.pos.x * 0.7f) * (0.85f * lift * dt);
+                }
+            }
+
+            for (auto& bptr : world.bodies()) {
+                Body& dyn = *bptr;
+                if (dyn.type != BodyType::Dynamic) continue;
+                if (dyn.tag != crateTag && dyn.tag != ballTag) continue;
+                if (dyn.pos.y < columnTop || dyn.pos.y > topY + 0.35f) continue;
+                const float dx = std::abs(dyn.pos.x - cx);
+                if (dx > halfW) continue;
+                const float lift = 1.f - std::clamp(dx / halfW, 0.f, 1.f);
+                dyn.vel.y -= 18.f * lift * dt;
+            }
+            continue;
         }
     }
 }
@@ -182,12 +432,14 @@ void Slime::applySpikeHazard(float dt, World& world) {
     float vr = visualRadius_;
     for (auto& sb : world.softBodies()) {
         if (sb->tag != myTag_) continue;
+        if (!sb->playerControlled) continue;
         Vec2 cc = sb->centroid();
         for (auto& q : sb->points) vr = std::max(vr, distance(q.pos, cc));
     }
 
     for (auto& sb : world.softBodies()) {
         if (sb->tag != myTag_) continue;
+        if (!sb->playerControlled) continue;
         for (auto& pt : sb->points) {
             if (pt.pinned) continue;
             for (auto& hb : world.bodies()) {
@@ -291,6 +543,7 @@ void Slime::emitLandingTrail(World& world, float impactSpeed) {
     contacts.reserve(32);
     for (auto& sb : world.softBodies()) {
         if (sb->tag != myTag_) continue;
+        if (!sb->playerControlled) continue;
         for (auto& pt : sb->points) {
             for (auto& b : world.bodies()) {
                 if (b->tag == spikeHazardTag) continue;
@@ -386,6 +639,7 @@ void Slime::emitContinuousTrail(float dt, World& world) {
     bool found = false;
     for (auto& sb : world.softBodies()) {
         if (sb->tag != myTag_) continue;
+        if (!sb->playerControlled) continue;
         for (auto& pt : sb->points) {
             for (auto& b : world.bodies()) {
                 if (b->tag == spikeHazardTag) continue;
@@ -469,6 +723,14 @@ void Slime::fadeTrail(float dt) {
     }
 }
 
+float Slime::restPressureForBlob(const SoftBody& sb, float taggedMass) const {
+    if (taggedMass <= 1e-6f) return basePressure_;
+    const float blobMass = softBodyMass(sb);
+    if (blobMass <= 1e-6f) return basePressure_;
+    const float massFrac = std::clamp(blobMass / taggedMass, 0.08f, 1.f);
+    return basePressure_ * massFrac;
+}
+
 void Slime::launch(World& world, const Vec2& aimDir) {
     float t = std::clamp(chargeTimer_ / chargeMaxTime, 0.f, 1.f);
     // Ease-out cubic on the charge curve — most of the force is in the early
@@ -495,9 +757,12 @@ void Slime::launch(World& world, const Vec2& aimDir) {
     // Off-centre impulse: pick a random sideways offset → blob spins in flight.
     float spinSign = (rnd11() >= 0.f) ? 1.f : -1.f;
     float spinMag = launchSpinMax * (0.4f + 0.6f * t);
+    const float taggedMass = taggedSoftBodyMass(world, myTag_);
 
     for (auto& sb : world.softBodies()) {
         if (sb->tag != myTag_) continue;
+        if (!sb->playerControlled) continue;
+        const float restPressure = restPressureForBlob(*sb, taggedMass);
         Vec2 cc = sb->centroid();
         for (auto& p : sb->points) {
             // Linear: every point gets the launch velocity.
@@ -508,7 +773,7 @@ void Slime::launch(World& world, const Vec2& aimDir) {
             Vec2 tangent{-r.y * spinSign, r.x * spinSign};
             p.vel += tangent * spinMag;
         }
-        sb->pressureTarget = basePressure_ * launchPuffFactor;
+        sb->pressureTarget = restPressure * launchPuffFactor;
     }
     charging_ = false;
     chargeTimer_ = 0.f;
@@ -518,7 +783,7 @@ void Slime::launch(World& world, const Vec2& aimDir) {
 }
 
 void Slime::updateGrabThrow(float dt, World& world, bool grabHeld) {
-    Vec2 c = playerMassCentroid(world, myTag_);
+    Vec2 c = playerControlledCentroid(world, myTag_);
     auto findBody = [&](uint32_t id) -> Body* {
         for (auto& bp : world.bodies()) {
             if (bp->id == id && bp->type == BodyType::Dynamic)
@@ -531,6 +796,7 @@ void Slime::updateGrabThrow(float dt, World& world, bool grabHeld) {
     float slimeMass = 0.f;
     for (auto& sb : world.softBodies()) {
         if (sb->tag != myTag_) continue;
+        if (!sb->playerControlled) continue;
         for (auto& p : sb->points) {
             slimeVel += p.vel * p.mass;
             slimeMass += p.mass;
@@ -628,19 +894,30 @@ void Slime::update(float dt, World& world, const Vec2& aimWorld, bool jumpHeld, 
                    bool gatherHeld, bool shiftSplitClick) {
     spikeSplitCd_ = std::max(0.f, spikeSplitCd_ - dt);
     jumpCooldownRemaining_ = std::max(0.f, jumpCooldownRemaining_ - dt);
+    manualSplitCooldown_ = std::max(0.f, manualSplitCooldown_ - dt);
 
-    if (shiftSplitClick && playerBlobCount(world, myTag_) > 0) {
-        Vec2 c = playerMassCentroid(world, myTag_);
-        world.playerSplitLargestBlobWithTag(myTag_, aimWorld - c);
+    if (shiftSplitClick && charging_) {
+        charging_ = false;
+        chargeTimer_ = 0.f;
+        chargeBufferTimer_ = 0.f;
+    }
+
+    if (shiftSplitClick && manualSplitCooldown_ <= 0.f && playerBlobCount(world, myTag_) > 0) {
+        Vec2 c = playerControlledCentroid(world, myTag_);
+        if (world.playerSplitLargestBlobWithTag(myTag_, aimWorld - c)) {
+            manualSplitCooldown_ = 0.22f;
+        }
     }
 
     applyFragmentGather(dt, world, gatherHeld);
+    mergeGatheredFragmentsOnContact(world, gatherHeld);
+    applyEnvironmentProps(dt, world);
     applySpikeHazard(dt, world);
     syncEmbeddedSpikes(dt, world);
 
     // Compute aim direction from current player centroid → mouse.
     {
-        Vec2 c = playerMassCentroid(world, myTag_);
+        Vec2 c = playerControlledCentroid(world, myTag_);
         Vec2 d = aimWorld - c;
         float L = d.len();
         aimDir_ = (L > 1e-3f) ? d / L : Vec2{0.f, -1.f};
@@ -653,6 +930,7 @@ void Slime::update(float dt, World& world, const Vec2& aimWorld, bool jumpHeld, 
         float maxVy = 0.f;
         for (auto& sb : world.softBodies()) {
             if (sb->tag != myTag_) continue;
+            if (!sb->playerControlled) continue;
             for (auto& p : sb->points) maxVy = std::max(maxVy, p.vel.y);
         }
         if (!grounded_) lastFallSpeed_ = std::max(lastFallSpeed_, maxVy);
@@ -663,6 +941,7 @@ void Slime::update(float dt, World& world, const Vec2& aimWorld, bool jumpHeld, 
     bool wallBraced = false;
     for (auto& sb : world.softBodies()) {
         if (sb->tag != myTag_) continue;
+        if (!sb->playerControlled) continue;
         if (blobOnSupport(*sb, world)) footGrounded = true;
         if (blobWallBrace(*sb, world) || blobGlueSurfaceBrace(*sb, world)) wallBraced = true;
         if (footGrounded && wallBraced) break;
@@ -687,6 +966,7 @@ void Slime::update(float dt, World& world, const Vec2& aimWorld, bool jumpHeld, 
     fadeTrail(dt);
 
     const bool canCharge = braced || coyoteTimer_ > 0.f;
+    const float taggedMass = taggedSoftBodyMass(world, myTag_);
 
     // Buffer: pressing in the air → start charge as soon as you land / brace.
     if (jumpHeld && !canCharge) {
@@ -709,7 +989,9 @@ void Slime::update(float dt, World& world, const Vec2& aimWorld, bool jumpHeld, 
         float t = chargeTimer_ / chargeMaxTime;
         for (auto& sb : world.softBodies()) {
             if (sb->tag != myTag_) continue;
-            sb->pressureTarget = basePressure_ * (1.f - chargeSquashAmount * t);
+            if (!sb->playerControlled) continue;
+            const float restPressure = restPressureForBlob(*sb, taggedMass);
+            sb->pressureTarget = restPressure * (1.f - chargeSquashAmount * t);
         }
         // Auto-launch if max charge reached (stops infinite hold).
         if (chargeTimer_ >= chargeMaxTime - 1e-4f && jumpHeld) {
@@ -725,7 +1007,8 @@ void Slime::update(float dt, World& world, const Vec2& aimWorld, bool jumpHeld, 
             chargeTimer_ = 0.f;
             for (auto& sb : world.softBodies()) {
                 if (sb->tag != myTag_) continue;
-                sb->pressureTarget = basePressure_;
+                if (!sb->playerControlled) continue;
+                sb->pressureTarget = restPressureForBlob(*sb, taggedMass);
             }
         }
     }
@@ -735,7 +1018,8 @@ void Slime::update(float dt, World& world, const Vec2& aimWorld, bool jumpHeld, 
         for (auto& sb : world.softBodies()) {
             if (sb->tag != myTag_) continue;
             float k = std::min(1.f, dt * 4.f);
-            sb->pressureTarget += (basePressure_ - sb->pressureTarget) * k;
+            const float restPressure = restPressureForBlob(*sb, taggedMass);
+            sb->pressureTarget += (restPressure - sb->pressureTarget) * k;
         }
     }
 
@@ -744,6 +1028,7 @@ void Slime::update(float dt, World& world, const Vec2& aimWorld, bool jumpHeld, 
     int bestPointCount = -1;
     for (auto& sb : world.softBodies()) {
         if (sb->tag != myTag_) continue;
+        if (!sb->playerControlled) continue;
         const int count = (int)sb->points.size();
         if (count > bestPointCount) {
             bestPointCount = count;

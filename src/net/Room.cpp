@@ -8,6 +8,7 @@
 
 #include <enet/enet.h>
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstdio>
 #include <cstring>
@@ -15,8 +16,10 @@
 
 namespace pe::net {
 
-Room::Room(uint32_t id, std::string name)
-    : id_(id), name_(std::move(name)) {
+Room::Room(uint32_t id, std::string name, int maxPlayers, uint8_t optionsFlags)
+    : id_(id), name_(std::move(name)),
+      maxPlayers_(std::clamp(maxPlayers, 1, kMaxPlayers)),
+      optionsFlags_(optionsFlags) {
     world_.gravity = {0.f, 22.f};
     buildScene(world_);
     lastEmptyStamp_ = clock::now();
@@ -36,7 +39,7 @@ float Room::emptySeconds() const {
 }
 
 int Room::slotForPeer(_ENetPeer* peer) const {
-    for (int i = 0; i < kMaxPlayers; ++i) {
+    for (int i = 0; i < maxPlayers_; ++i) {
         if (slots_[(size_t)i].active && slots_[(size_t)i].peer == peer)
             return i;
     }
@@ -51,9 +54,11 @@ int Room::addPeer(_ENetPeer* peer) {
             s.active = true;
             s.peer = peer;
             s.aim = {0.f, -1.f};
+            s.colorIndex = (uint8_t)(i % 8);
             // Spawn the slime now so the next snapshot already shows the new player.
             slimes_[(size_t)i].spawn(world_, spawnPosForSlot(i), 0.9f, kSlimeSegments,
                                      Slime::networkedPlayerBlobTag(i));
+            slimes_[(size_t)i].setColorIndex(world_, s.colorIndex);
             s.slimeAlive = true;
             return i;
         }
@@ -72,7 +77,8 @@ void Room::removePeer(_ENetPeer* peer) {
 }
 
 void Room::setInput(int slot, Vec2 aim, bool jump, bool merge, bool grab, bool respawn,
-                    bool gather, bool shiftSplitClick) {
+                    bool gather, bool shiftSplitClick, bool switchFragmentClick,
+                    uint8_t colorIndex) {
     if (slot < 0 || slot >= kMaxPlayers) return;
     Slot& s = slots_[(size_t)slot];
     if (!s.active) return;
@@ -83,21 +89,15 @@ void Room::setInput(int slot, Vec2 aim, bool jump, bool merge, bool grab, bool r
     s.respawnHeld = respawn;
     s.gatherHeld = gather;
     if (shiftSplitClick) s.pendingShiftSplit = true;
+    if (switchFragmentClick) s.pendingSwitchFragment = true;
+    if (s.colorIndex != (uint8_t)(colorIndex % 8)) {
+        s.colorIndex = (uint8_t)(colorIndex % 8);
+        slimes_[(size_t)slot].setColorIndex(world_, s.colorIndex);
+    }
 }
 
 void Room::tick(float elapsedSec) {
     if (elapsedSec > 0.05f) elapsedSec = 0.05f;
-
-    for (int i = 0; i < kMaxPlayers; ++i) {
-        Slot& s = slots_[(size_t)i];
-        if (!s.active || !s.slimeAlive) continue;
-        if (s.pendingShiftSplit) {
-            const int tag = Slime::networkedPlayerBlobTag(i);
-            Vec2 c = Slime::playerMassCentroid(world_, tag);
-            world_.playerSplitLargestBlobWithTag(tag, s.aim - c);
-            s.pendingShiftSplit = false;
-        }
-    }
 
     for (int i = 0; i < kMaxPlayers; ++i) {
         Slot& s = slots_[(size_t)i];
@@ -106,6 +106,7 @@ void Room::tick(float elapsedSec) {
             s.mergeLatch = false;
             s.lastRespawnHeld = false;
             s.pendingShiftSplit = false;
+            s.pendingSwitchFragment = false;
             continue;
         }
         if (s.mergeHeld) {
@@ -139,6 +140,7 @@ void Room::tick(float elapsedSec) {
                 world_.removeSoftBodiesWithTag(tag);
                 slimes_[(size_t)i].spawn(world_, spawnPosForSlot(i), 0.9f,
                                          kSlimeSegments, tag);
+                slimes_[(size_t)i].setColorIndex(world_, s.colorIndex);
             }
             s.lastRespawnHeld = rh;
         }
@@ -146,8 +148,13 @@ void Room::tick(float elapsedSec) {
         for (int i = 0; i < kMaxPlayers; ++i) {
             Slot& s = slots_[(size_t)i];
             if (!s.active || !s.slimeAlive) continue;
+            const bool doSplitThisStep = s.pendingShiftSplit;
+            const bool doSwitchThisStep = s.pendingSwitchFragment;
+            s.pendingShiftSplit = false;
+            s.pendingSwitchFragment = false;
+            if (doSwitchThisStep) slimes_[(size_t)i].cycleControlledFragment(world_);
             slimes_[(size_t)i].update(fixedDt, world_, s.aim, s.jumpHeld, s.grabHeld, s.gatherHeld,
-                                      false);
+                                      doSplitThisStep);
         }
         world_.step(fixedDt);
         for (int i = 0; i < kMaxPlayers; ++i) {
@@ -169,21 +176,25 @@ void Room::broadcastSnapshot(_ENetHost* host) {
     // ~30 Hz — 60 Hz × large UDP payloads tends to fragment / backlog queues on small VPS links.
     nextSnap_ = now + std::chrono::milliseconds(33);
 
-    std::vector<const SoftBody*> playerBlobs(kMaxPlayers, nullptr);
+    std::array<std::vector<const SoftBody*>, kMaxPlayers> playerBlobs;
+    std::array<size_t, kMaxPlayers> primaryBlob{};
     for (int i = 0; i < kMaxPlayers; ++i) {
         if (!slots_[(size_t)i].active) continue;
         const int wantTag = Slime::networkedPlayerBlobTag(i);
-        const SoftBody* best = nullptr;
         int bestN = -1;
+        size_t bestIdx = 0;
         for (auto& sb : world_.softBodies()) {
             if (sb->tag != wantTag) continue;
+            const size_t idx = playerBlobs[(size_t)i].size();
+            playerBlobs[(size_t)i].push_back(sb.get());
             const int n = (int)sb->points.size();
-            if (n > bestN) {
+            if (sb->playerControlled || n > bestN) {
                 bestN = n;
-                best = sb.get();
+                bestIdx = idx;
+                if (sb->playerControlled) bestN = 1000000 + n;
             }
         }
-        playerBlobs[(size_t)i] = best;
+        primaryBlob[(size_t)i] = bestIdx;
     }
 
     for (int receiver = 0; receiver < kMaxPlayers; ++receiver) {
@@ -201,9 +212,16 @@ void Room::broadcastSnapshot(_ENetHost* host) {
         buf.resize(buf.size() + sizeof(snap));
 
         for (int i = 0; i < kMaxPlayers; ++i) {
-            const SoftBody* sb = playerBlobs[(size_t)i];
-            if (!sb) continue;
+            const auto& blobs = playerBlobs[(size_t)i];
+            if (blobs.empty()) continue;
             const Slot& s = slots_[(size_t)i];
+            const size_t primaryIdx = primaryBlob[(size_t)i];
+
+            for (size_t fragIndex = 0;
+                 fragIndex < blobs.size() && fragIndex <= (size_t)kSlimeFragmentIdMask;
+                 ++fragIndex) {
+            const SoftBody* sb = blobs[fragIndex];
+            const bool isPrimary = fragIndex == primaryIdx;
 
             SlimeStatePayload payload{};
             payload.ownerId = (uint32_t)i;
@@ -236,8 +254,10 @@ void Room::broadcastSnapshot(_ENetHost* host) {
             payload.isLocal = (uint8_t)(i == receiver ? 1 : 0);
             payload.numPoints = (uint16_t)n;
             payload.embeddedSpikeCount = 0;
-            payload.reserved0 = 0;
-            if (s.slimeAlive)
+            payload.fragmentInfo = (uint8_t)fragIndex;
+            if (isPrimary) payload.fragmentInfo |= kSlimeFragmentPrimaryBit;
+            payload.colorIndex = sb->colorIndex;
+            if (s.slimeAlive && isPrimary)
                 payload.embeddedSpikeCount =
                     (uint8_t)std::min<size_t>(255, slimes_[(size_t)i].stuckSpikeCount());
 
@@ -253,7 +273,7 @@ void Room::broadcastSnapshot(_ENetHost* host) {
             }
 
             uint16_t nTrail = 0;
-            if (s.slimeAlive) {
+            if (s.slimeAlive && isPrimary) {
                 const auto& pv = slimes_[(size_t)i].puddles();
                 constexpr uint16_t kMaxTrail = 24;
                 const size_t start =
@@ -278,6 +298,7 @@ void Room::broadcastSnapshot(_ENetHost* host) {
                 std::memcpy(buf.data() + tn, &nTrail, sizeof(nTrail));
             }
             ++snap.numSlimes;
+            }
         }
 
         for (auto& bptr : world_.bodies()) {

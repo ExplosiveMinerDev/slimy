@@ -32,6 +32,8 @@ public:
         bool gatherHeld = false;
         /// Latest frame requested Shift+LMB split (consumed once per tick).
         bool pendingShiftSplit = false;
+        bool pendingSwitchFragment = false;
+        uint8_t colorIndex = 0;
         // Server-side state mirroring solo merge timing.
         float mergeHold = 0.f;
         bool mergeLatch = false;
@@ -40,7 +42,8 @@ public:
     };
 
     Room() = default;
-    Room(uint32_t id, std::string name);
+    Room(uint32_t id, std::string name, int maxPlayers = kMaxPlayers,
+         uint8_t optionsFlags = 0);
     Room(const Room&) = delete;
     Room& operator=(const Room&) = delete;
     Room(Room&&) = default;
@@ -49,7 +52,8 @@ public:
     uint32_t id() const { return id_; }
     const std::string& name() const { return name_; }
     int playerCount() const;
-    int maxPlayers() const { return kMaxPlayers; }
+    int maxPlayers() const { return maxPlayers_; }
+    uint8_t optionsFlags() const { return optionsFlags_; }
     bool isEmpty() const { return playerCount() == 0; }
     /// Wall-clock since the last connected player left (used for purge).
     float emptySeconds() const;
@@ -63,7 +67,8 @@ public:
 
     /// Apply latest received input from a slot.
     void setInput(int slot, Vec2 aim, bool jump, bool merge, bool grab, bool respawn,
-                    bool gather, bool shiftSplitClick);
+                    bool gather, bool shiftSplitClick, bool switchFragmentClick,
+                    uint8_t colorIndex);
 
     /// Advance the simulation by `elapsedSec` (consumed via fixed-dt accumulator).
     void tick(float elapsedSec);
@@ -81,6 +86,8 @@ public:
 private:
     uint32_t id_ = 0;
     std::string name_;
+    int maxPlayers_ = kMaxPlayers;
+    uint8_t optionsFlags_ = 0;
     World world_;
     std::array<Slime, kMaxPlayers> slimes_{};
     std::array<Slot, kMaxPlayers> slots_{};

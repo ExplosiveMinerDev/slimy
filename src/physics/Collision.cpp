@@ -307,18 +307,36 @@ bool closestSurfacePointToBody(const Vec2& p, const Body& b, Vec2& outClosest, f
 
 bool pointVsBodyWithEntry(const Vec2& prev, const Vec2& pos, Body& b,
                           Vec2& outNormal, float& outDepth, Vec2& outClosest) {
-    (void)prev;
     if (b.shape.type == ShapeType::Circle)
         return pointVsBody(pos, b, outNormal, outDepth, outClosest);
 
     Mat2 R(b.rot);
+    Vec2 prevLocal = R.mulT(prev - b.pos);
     Vec2 posLocal = R.mulT(pos - b.pos);
     const auto& V = b.shape.vertices;
     const auto& N = b.shape.normals;
 
+    int entryFace = -1;
+    float bestPrevSep = -std::numeric_limits<float>::infinity();
+    float entryDepth = 0.f;
     for (size_t i = 0; i < N.size(); ++i) {
-        if (dot(N[i], posLocal - V[i]) > 0.f)
+        const float nowSep = dot(N[i], posLocal - V[i]);
+        if (nowSep > 0.f)
             return false;
+        const float prevSep = dot(N[i], prevLocal - V[i]);
+        if (prevSep > 0.f && prevSep > bestPrevSep) {
+            bestPrevSep = prevSep;
+            entryFace = (int)i;
+            entryDepth = -nowSep;
+        }
+    }
+
+    constexpr float kMinPen = 5e-6f;
+    if (entryFace >= 0 && entryDepth > kMinPen) {
+        outNormal = R.mul(N[(size_t)entryFace]);
+        outDepth = entryDepth;
+        outClosest = pos + outNormal * outDepth;
+        return true;
     }
 
     Vec2 geoClosest;
@@ -327,7 +345,6 @@ bool pointVsBodyWithEntry(const Vec2& prev, const Vec2& pos, Body& b,
     if (!closestSurfacePointToBody(pos, b, geoClosest, sd, geoDir))
         return false;
 
-    constexpr float kMinPen = 5e-6f;
     float depth = -sd;
     if (depth <= kMinPen)
         return false;

@@ -5,9 +5,9 @@
 
 namespace pe::net {
 
-constexpr uint32_t kProtocolVersion = 12;
+constexpr uint32_t kProtocolVersion = 14;
 /// Bump when shipping a new Windows client binary (must match server `--build` / manifest for auto-update).
-constexpr uint32_t kClientBuild = 15;
+constexpr uint32_t kClientBuild = 16;
 /// Max UTF-8 bytes per chat line (wire + UI clipping).
 constexpr int kMaxChatPayloadBytes = 96;
 /// Max UTF-8 bytes for a user-supplied room name.
@@ -20,6 +20,8 @@ constexpr int kMaxRooms = 16;
 /// Max simultaneous TCP/ENet peers (lobby + all rooms). 16 * 8 plus headroom.
 constexpr int kMaxPeers = 144;
 constexpr int kSlimeSegments = 22;
+constexpr uint8_t kSlimeFragmentPrimaryBit = 0x80;
+constexpr uint8_t kSlimeFragmentIdMask = 0x7F;
 /// Empty room is kept around this long before being purged (so reconnect bursts don't lose state).
 constexpr float kRoomPurgeAfterEmptySec = 60.f;
 
@@ -70,11 +72,13 @@ struct ClientInputMsg {
     MsgHeader hdr;
     float aimX, aimY;        // world-space mouse target
     uint8_t jumpHeld;
-    uint8_t mergeHeld;       // hold Enter / KP Enter — server mirrors solo merge timing
-    uint8_t grabHeld;        // hold E — attract nearby crate/ball; release to throw (aim)
-    uint8_t respawnHeld;     // hold R — server respawns slime at spawn (edge-triggered)
-    uint8_t gatherHeld;      // hold Ctrl — pull slime fragments toward mass centroid
-    uint8_t shiftSplitClick; // edge: Shift + LMB — split largest blob toward aim
+    uint8_t mergeHeld;
+    uint8_t grabHeld;
+    uint8_t respawnHeld;
+    uint8_t gatherHeld;
+    uint8_t shiftSplitClick;
+    uint8_t switchFragmentClick;
+    uint8_t colorIndex;
 };
 
 /// Reliable client → server. Wire: `hdr` + `byteLen` + `byteLen` payload bytes (UTF-8).
@@ -100,6 +104,7 @@ struct RoomInfoNet {
     uint8_t nameLen;
     uint8_t playerCount;
     uint8_t maxPlayers;
+    uint8_t optionsFlags;
 };
 
 struct ServerRoomListMsg {
@@ -111,6 +116,8 @@ struct ServerRoomListMsg {
 struct ClientCreateRoomMsg {
     MsgHeader hdr;
     uint8_t nameLen;
+    uint8_t maxPlayers;
+    uint8_t optionsFlags;
     // followed by nameLen UTF-8 bytes
 };
 
@@ -151,7 +158,7 @@ struct TrailDropNet {
     float alpha = 1.f;
 };
 
-// Per-slime payload inside a snapshot. After this header come `numPoints` Vec2s,
+// Per-slime-fragment payload inside a snapshot. After this header come `numPoints` Vec2s,
 // then `uint16_t numTrailDrops` and `numTrailDrops` × `TrailDropNet`.
 struct SlimeStatePayload {
     uint32_t ownerId;
@@ -165,7 +172,8 @@ struct SlimeStatePayload {
     uint8_t isLocal;         // server stamps 1 for receiver, 0 for others
     uint16_t numPoints;
     uint8_t embeddedSpikeCount; ///< Stuck spike props on slime (0..18 capped server-side); visual + physics.
-    uint8_t reserved0;
+    uint8_t fragmentInfo;    ///< low 7 bits: fragment id; high bit: primary owner fragment.
+    uint8_t colorIndex;
 };
 
 struct DynamicRigidNetState {
@@ -179,7 +187,7 @@ struct ServerSnapshotMsg {
     uint16_t numSlimes;
     /// Dynamic `Body` instances only (same creation order / ids as solo `buildScene`).
     uint16_t numDynamicRigids;
-    // followed by, for each slime:
+    // followed by, for each slime fragment:
     //   SlimeStatePayload + numPoints * (float x, float y)
     //   + uint16_t numTrailDrops + numTrailDrops * TrailDropNet
     // then numDynamicRigids × DynamicRigidNetState

@@ -175,32 +175,62 @@ namespace {
 
 /// Single opaque fan + crisp outline + tiny spec pixels (no translucent overlay —
 /// second fans / alpha circles caused dirty greys on concave blobs).
+struct SlimeStyle {
+    ::Color fill;
+    ::Color outline;
+    ::Color rim;
+    ::Color specA;
+    ::Color specB;
+    ::Color specC;
+};
+
+SlimeStyle slimeStyleForIndex(uint8_t colorIndex) {
+    static const SlimeStyle styles[] = {
+        {{46, 168, 86, 255},  {16, 78, 38, 255},   {92, 215, 130, 255},
+         {200, 255, 210, 255}, {240, 255, 248, 255}, {150, 235, 175, 255}},
+        {{64, 150, 210, 255}, {22, 60, 96, 255},   {120, 205, 245, 255},
+         {205, 242, 255, 255}, {245, 252, 255, 255}, {145, 218, 245, 255}},
+        {{224, 114, 82, 255}, {108, 44, 34, 255},  {255, 166, 122, 255},
+         {255, 218, 194, 255}, {255, 246, 236, 255}, {246, 154, 120, 255}},
+        {{196, 96, 196, 255}, {82, 36, 96, 255},   {232, 148, 232, 255},
+         {250, 214, 255, 255}, {255, 245, 255, 255}, {224, 142, 232, 255}},
+        {{230, 196, 72, 255}, {104, 78, 20, 255},  {255, 232, 116, 255},
+         {255, 246, 188, 255}, {255, 254, 238, 255}, {245, 218, 100, 255}},
+        {{64, 206, 174, 255}, {20, 86, 78, 255},   {116, 238, 216, 255},
+         {208, 255, 246, 255}, {242, 255, 252, 255}, {148, 235, 214, 255}},
+        {{222, 86, 126, 255}, {104, 28, 56, 255},  {255, 132, 170, 255},
+         {255, 204, 220, 255}, {255, 242, 248, 255}, {248, 142, 174, 255}},
+        {{154, 206, 78, 255}, {64, 94, 28, 255},   {196, 238, 116, 255},
+         {232, 255, 196, 255}, {250, 255, 236, 255}, {186, 234, 112, 255}},
+    };
+    return styles[colorIndex % (sizeof(styles) / sizeof(styles[0]))];
+}
+
 void drawSlimyBlob(const std::vector<Vector2>& poly, int n, int cx, int cy, float zoom,
-                  ::Color fillBody, ::Color outline) {
+                  const SlimeStyle& style) {
     std::vector<Vector2> fan;
     fan.reserve((size_t)n + 2);
     fan.push_back({(float)cx, (float)cy});
     for (int i = 0; i < n; ++i) fan.push_back(poly[(size_t)i]);
     fan.push_back(poly[0]);
-    DrawTriangleFan(fan.data(), (int)fan.size(), fillBody);
+    DrawTriangleFan(fan.data(), (int)fan.size(), style.fill);
 
-    const ::Color rimHi{92, 215, 130, 255};
     for (int i = 0; i < n; ++i) {
         const Vector2& a = poly[(size_t)i];
         const Vector2& b = poly[(size_t)((i + 1) % n)];
         int my = (iround(a.y) + iround(b.y)) / 2;
         if (my < cy + 1)
-            DrawLine((int)a.x, (int)a.y, (int)b.x, (int)b.y, rimHi);
+            DrawLine((int)a.x, (int)a.y, (int)b.x, (int)b.y, style.rim);
         else
-            DrawLine((int)a.x, (int)a.y, (int)b.x, (int)b.y, outline);
+            DrawLine((int)a.x, (int)a.y, (int)b.x, (int)b.y, style.outline);
     }
 
     const int ox = std::max(2, iround(2.f + zoom * 0.08f));
     const int oy = std::max(2, iround(2.f + zoom * 0.07f));
-    DrawPixel(cx - ox, cy - oy, ::Color{200, 255, 210, 255});
-    DrawPixel(cx - ox + 1, cy - oy, ::Color{240, 255, 248, 255});
-    DrawPixel(cx - ox, cy - oy + 1, ::Color{150, 235, 175, 255});
-    DrawPixel(cx - ox - 1, cy - oy, ::Color{120, 210, 150, 255});
+    DrawPixel(cx - ox, cy - oy, style.specA);
+    DrawPixel(cx - ox + 1, cy - oy, style.specB);
+    DrawPixel(cx - ox, cy - oy + 1, style.specC);
+    DrawPixel(cx - ox - 1, cy - oy, style.rim);
 }
 
 struct BodyStyle {
@@ -251,6 +281,11 @@ BodyStyle styleForBody(const Body& b) {
         s.outline = {92, 28, 24, 255};
         s.accent = {236, 152, 132, 255};
         s.deep = {118, 42, 38, 255};
+    } else if (b.tag == Slime::airVentTag) {
+        s.fill = {78, 92, 104, 255};
+        s.outline = {26, 34, 42, 255};
+        s.accent = {142, 226, 232, 255};
+        s.deep = {46, 58, 68, 255};
     } else if (b.type == BodyType::Static) {
         s.fill = {84, 88, 108, 255};
         s.outline = {30, 32, 44, 255};
@@ -384,6 +419,25 @@ void Renderer::drawBody(const Body& b, unsigned int /*fillColor*/, unsigned int 
         DrawPixel(tx - 1, ty, st.accent);
         DrawPixel(tx, ty - 1, ::Color{255, 248, 210, 255});
     }
+    if (b.tag == Slime::airVentTag) {
+        AABB box = b.aabb();
+        const float t = (float)GetTime();
+        for (float x = box.min.x + 0.18f; x < box.max.x - 0.05f; x += 0.24f) {
+            Vec2 p0 = worldToScreen({x, box.min.y + 0.03f});
+            Vec2 p1 = worldToScreen({x, box.max.y - 0.03f});
+            DrawLine(iround(p0.x), iround(p0.y), iround(p1.x), iround(p1.y), st.deep);
+        }
+        const float cx = (box.min.x + box.max.x) * 0.5f;
+        for (int i = 0; i < 3; ++i) {
+            const float phase = t * 1.8f + (float)i * 1.9f;
+            const float y0 = box.min.y - 0.42f - std::fmod(phase, 1.4f);
+            const float x0 = cx + std::sin(phase * 1.7f) * (0.18f + 0.10f * (float)i);
+            Vec2 s0 = worldToScreen({x0, y0});
+            Vec2 s1 = worldToScreen({x0 + std::sin(phase) * 0.10f, y0 - 0.34f});
+            DrawLine(iround(s0.x), iround(s0.y), iround(s1.x), iround(s1.y),
+                     ::Color{142, 226, 232, 120});
+        }
+    }
 }
 
 void Renderer::drawSoftBody(const SoftBody& sb) {
@@ -418,9 +472,7 @@ void Renderer::drawSoftBody(const SoftBody& sb) {
     int cx = iround(cs.x);
     int cy = iround(cs.y);
 
-    const ::Color fillBody{46, 168, 86, 255};
-    const ::Color outlineCol{16, 78, 38, 255};
-    drawSlimyBlob(poly, n, cx, cy, camera.zoom, fillBody, outlineCol);
+    drawSlimyBlob(poly, n, cx, cy, camera.zoom, slimeStyleForIndex(sb.colorIndex));
 
     // (Eyes are drawn separately via drawSlimeFace — they have their own
     //  spring-damped motion driven by Slime, not by raw mesh anchors.)
@@ -493,7 +545,8 @@ void Renderer::drawSlimeEmbeddedSpikesApprox(Vec2 centroidWorld, float radiusWor
     }
 }
 
-void Renderer::drawRemoteSlimeBody(const std::vector<Vec2>& worldPoints, bool isLocalPlayer) {
+void Renderer::drawRemoteSlimeBody(const std::vector<Vec2>& worldPoints, bool isLocalPlayer,
+                                   uint8_t colorIndex) {
     int n = (int)worldPoints.size();
     if (n < 3) return;
 
@@ -512,10 +565,8 @@ void Renderer::drawRemoteSlimeBody(const std::vector<Vec2>& worldPoints, bool is
         poly.push_back({(float)iround(sp.x), (float)iround(sp.y)});
     }
 
-    const ::Color fillBody{46, 168, 86, 255};
-    const ::Color outlineCol{16, 78, 38, 255};
     (void)isLocalPlayer;
-    drawSlimyBlob(poly, n, cx, cy, camera.zoom, fillBody, outlineCol);
+    drawSlimyBlob(poly, n, cx, cy, camera.zoom, slimeStyleForIndex(colorIndex));
 }
 
 void Renderer::drawSlimeFace(Vec2 leftEye, Vec2 rightEye, Vec2 vel, float radius) {

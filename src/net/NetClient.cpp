@@ -24,8 +24,11 @@ float lerpAngleRad(float a, float b, float w) {
     return a + d * w;
 }
 
-const RemoteSlime* findSlimeByOwner(const std::vector<RemoteSlime>& v, uint32_t ownerId) {
-    for (const auto& s : v) if (s.ownerId == ownerId) return &s;
+const RemoteSlime* findSlimeByKey(const std::vector<RemoteSlime>& v, uint32_t ownerId,
+                                  uint8_t fragmentId) {
+    for (const auto& s : v) {
+        if (s.ownerId == ownerId && s.fragmentId == fragmentId) return &s;
+    }
     return nullptr;
 }
 
@@ -35,7 +38,7 @@ const RigidNetSample* findRigidById(const std::vector<RigidNetSample>& v, uint32
 }
 
 RemoteSlime blendSlime(const RemoteSlime& from, const RemoteSlime& to, float w) {
-    if (from.ownerId != to.ownerId) return to;
+    if (from.ownerId != to.ownerId || from.fragmentId != to.fragmentId) return to;
     RemoteSlime out = to;
     out.centroid = from.centroid * (1.f - w) + to.centroid * w;
     out.vel = from.vel * (1.f - w) + to.vel * w;
@@ -238,7 +241,7 @@ void Client::requestRoomList() {
     enet_peer_send(peer_, 0, pk);
 }
 
-void Client::createRoom(const std::string& name) {
+void Client::createRoom(const std::string& name, int maxPlayers, uint8_t optionsFlags) {
     if (!isConnected()) return;
     if (state_ != ClientState::Lobby) return;
     const size_t n = std::min(name.size(), (size_t)kMaxRoomNameBytes);
@@ -246,6 +249,8 @@ void Client::createRoom(const std::string& name) {
     auto* h = reinterpret_cast<ClientCreateRoomMsg*>(buf.data());
     h->hdr.type = (uint8_t)MsgType::ClientCreateRoom;
     h->nameLen = (uint8_t)n;
+    h->maxPlayers = (uint8_t)std::clamp(maxPlayers, 1, kMaxPlayers);
+    h->optionsFlags = optionsFlags;
     if (n) std::memcpy(buf.data() + sizeof(ClientCreateRoomMsg), name.data(), n);
     ENetPacket* pk = enet_packet_create(buf.data(), buf.size(), ENET_PACKET_FLAG_RELIABLE);
     enet_peer_send(peer_, 0, pk);
@@ -277,7 +282,8 @@ void Client::leaveRoom() {
 }
 
 void Client::sendInput(Vec2 aimWorld, bool jumpHeld, bool mergeHeld, bool grabHeld,
-                       bool respawnHeld, bool gatherHeld, bool shiftSplitClick) {
+                       bool respawnHeld, bool gatherHeld, bool shiftSplitClick,
+                       bool switchFragmentClick, uint8_t colorIndex) {
     if (!isConnected() || state_ != ClientState::InRoom) return;
     ClientInputMsg m{};
     m.hdr.type = (uint8_t)MsgType::ClientInput;
@@ -289,6 +295,8 @@ void Client::sendInput(Vec2 aimWorld, bool jumpHeld, bool mergeHeld, bool grabHe
     m.respawnHeld = (uint8_t)(respawnHeld ? 1 : 0);
     m.gatherHeld = (uint8_t)(gatherHeld ? 1 : 0);
     m.shiftSplitClick = (uint8_t)(shiftSplitClick ? 1 : 0);
+    m.switchFragmentClick = (uint8_t)(switchFragmentClick ? 1 : 0);
+    m.colorIndex = (uint8_t)(colorIndex % 8);
     // Unreliable @ ~60 Hz — reliable input queued behind ACKs and felt like huge "ping".
     ENetPacket* pk = enet_packet_create(&m, sizeof(m), 0);
     enet_peer_send(peer_, 0, pk);
@@ -346,6 +354,7 @@ void Client::updateNetTrail(float dt) {
     for (const auto& rs : slimesDisplay_) activeOwners.insert(rs.ownerId);
 
     for (const auto& rs : slimesDisplay_) {
+        if (!rs.isPrimaryFragment) continue;
         auto& ownerMap = netTrailAcc_[rs.ownerId];
         std::unordered_set<uint64_t> innerSeen;
         innerSeen.reserve(rs.trail.size() * 2 + 4);
@@ -400,7 +409,7 @@ void Client::advanceInterpolation() {
     slimesDisplay_.clear();
     slimesDisplay_.reserve(slimesCurr_.size());
     for (const auto& curr : slimesCurr_) {
-        const RemoteSlime* prev = findSlimeByOwner(slimesPrev_, curr.ownerId);
+        const RemoteSlime* prev = findSlimeByKey(slimesPrev_, curr.ownerId, curr.fragmentId);
         if (prev) slimesDisplay_.push_back(blendSlime(*prev, curr, alpha));
         else slimesDisplay_.push_back(curr);
     }
@@ -453,6 +462,7 @@ void Client::handleRoomList(const uint8_t* data, size_t len) {
         lr.roomId = info.roomId;
         lr.playerCount = info.playerCount;
         lr.maxPlayers = info.maxPlayers;
+        lr.optionsFlags = info.optionsFlags;
         lr.name.assign((const char*)p, (size_t)info.nameLen);
         p += info.nameLen;
         left -= info.nameLen;
@@ -524,7 +534,9 @@ void Client::handleSnapshot(const uint8_t* data, size_t len) {
 
         RemoteSlime rs;
         rs.ownerId = payload.ownerId;
+        rs.fragmentId = payload.fragmentInfo & kSlimeFragmentIdMask;
         rs.isLocalPlayer = payload.isLocal != 0;
+        rs.isPrimaryFragment = (payload.fragmentInfo & kSlimeFragmentPrimaryBit) != 0;
         rs.centroid = {payload.cx, payload.cy};
         rs.vel = {payload.vx, payload.vy};
         rs.leftEye = {payload.leftEyeX, payload.leftEyeY};
@@ -533,6 +545,7 @@ void Client::handleSnapshot(const uint8_t* data, size_t len) {
         rs.chargeFrac = payload.chargeFrac;
         rs.isCharging = payload.isCharging != 0;
         rs.embeddedSpikeCount = payload.embeddedSpikeCount;
+        rs.colorIndex = payload.colorIndex;
         rs.points.resize(payload.numPoints);
         for (uint16_t k = 0; k < payload.numPoints; ++k) {
             float xy[2];

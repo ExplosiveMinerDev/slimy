@@ -52,6 +52,10 @@ public:
     float braceTearRatio = 0.f;
 
     int tag = 0;
+    uint8_t colorIndex = 0;
+    /// Player blobs: only the main fragment receives player controls. Split-off
+    /// pieces keep the same tag for rendering/networking and can be gathered back.
+    bool playerControlled = true;
 
     // Build a circular blob with N points
     static SoftBody makeCircle(const Vec2& center, float radius, int segments,

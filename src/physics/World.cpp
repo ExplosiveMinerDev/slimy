@@ -145,112 +145,50 @@ static void inflateReconstructedBlob(SoftBody& nb) {
     for (auto& p : nb.points) p.prev = p.pos;
 }
 
-static std::vector<int> convexHullMonotoneOnPositions(const std::vector<Vec2>& pts) {
-    const int m = (int)pts.size();
-    if (m <= 2) {
-        std::vector<int> id((size_t)m);
-        std::iota(id.begin(), id.end(), 0);
-        return id;
-    }
-    std::vector<int> ord((size_t)m);
-    std::iota(ord.begin(), ord.end(), 0);
-    std::sort(ord.begin(), ord.end(), [&](int a, int b) {
-        return pts[(size_t)a].x < pts[(size_t)b].x ||
-               (pts[(size_t)a].x == pts[(size_t)b].x && pts[(size_t)a].y < pts[(size_t)b].y);
-    });
-    auto orient = [&](int o, int a, int b) {
-        return cross(pts[(size_t)a] - pts[(size_t)o], pts[(size_t)b] - pts[(size_t)o]);
-    };
-    std::vector<int> lower;
-    for (int idx : ord) {
-        while ((int)lower.size() >= 2 &&
-               orient(lower[(size_t)lower.size() - 2], lower.back(), idx) <= 0)
-            lower.pop_back();
-        lower.push_back(idx);
-    }
-    std::vector<int> upper;
-    for (int i = m - 1; i >= 0; --i) {
-        int idx = ord[(size_t)i];
-        while ((int)upper.size() >= 2 &&
-               orient(upper[(size_t)upper.size() - 2], upper.back(), idx) <= 0)
-            upper.pop_back();
-        upper.push_back(idx);
-    }
-    if (!lower.empty()) lower.pop_back();
-    if (!upper.empty()) upper.pop_back();
-    lower.insert(lower.end(), upper.begin(), upper.end());
-    return lower;
-}
-
-static SoftBody buildMergedConvexSoftBody(std::vector<PointMass> src, float stiff, float damp, float pk,
-                                          float pressureTargetHint, float restitution, float friction,
-                                          float perimTear, float braceTear,
-                                          int tag) {
+static SoftBody buildMergedRoundedSoftBody(std::vector<PointMass> src, float stiff, float damp, float pk,
+                                           float pressureTargetHint, float restitution, float friction,
+                                           float perimTear, float braceTear,
+                                           int tag, uint8_t colorIndex) {
     SoftBody nb;
     const int m = (int)src.size();
     if (m < 3) return nb;
 
-    std::vector<Vec2> loc((size_t)m);
-    for (int i = 0; i < m; ++i) loc[(size_t)i] = src[(size_t)i].pos;
-
-    std::vector<int> hullLocal = convexHullMonotoneOnPositions(loc);
-    const int hn = (int)hullLocal.size();
-    if (hn < 3) return nb;
-
     float totalM = 0.f;
-    for (auto& p : src) totalM += p.mass;
-    const float perM = totalM / (float)hn;
+    Vec2 center{0.f, 0.f};
+    Vec2 velocity{0.f, 0.f};
+    for (const auto& p : src) {
+        totalM += p.mass;
+        center += p.pos * p.mass;
+        velocity += p.vel * p.mass;
+    }
+    if (totalM < 1e-8f) return nb;
+    center *= (1.f / totalM);
+    velocity *= (1.f / totalM);
 
-    nb.points.reserve((size_t)hn);
-    for (int li : hullLocal) {
-        PointMass pm = src[(size_t)li];
-        pm.mass = perM;
-        pm.invMass = 1.f / perM;
-        nb.points.push_back(pm);
+    constexpr float kPi = 3.14159265f;
+    constexpr float kPressurePerArea = 24.f;
+    constexpr int kMergedSegments = 22;
+    const float hintedArea = pressureTargetHint > 1e-4f
+        ? pressureTargetHint / kPressurePerArea
+        : kPi * 0.9f * 0.9f;
+    const float radius = std::clamp(std::sqrt(std::max(0.14f, hintedArea) / kPi), 0.38f, 1.25f);
+
+    nb = SoftBody::makeCircle(center, radius, kMergedSegments, totalM, stiff, damp);
+    for (auto& p : nb.points) {
+        p.vel = velocity;
+        p.prev = p.pos;
     }
 
-    const int hnW = (int)nb.points.size();
-    if (hnW >= 3) {
-        float twice = 0.f;
-        for (int i = 0; i < hnW; ++i) {
-            twice += cross(nb.points[(size_t)i].pos, nb.points[(size_t)((i + 1) % hnW)].pos);
-        }
-        if (twice < 0.f) std::reverse(nb.points.begin(), nb.points.end());
-    }
-
-    inflateReconstructedBlob(nb);
-
-    const int seg = (int)nb.points.size();
-    for (int i = 0; i < seg; ++i) {
-        Spring s;
-        s.a = i;
-        s.b = (i + 1) % seg;
-        s.restLength = (nb.points[s.a].pos - nb.points[s.b].pos).len();
-        s.stiffness = stiff;
-        s.damping = damp;
-        s.isBrace = false;
-        nb.springs.push_back(s);
-    }
-    const int step = std::max(2, seg / 8);
-    for (int i = 0; i < seg; i += step) {
-        Spring s;
-        s.a = i;
-        s.b = (i + seg / 2) % seg;
-        s.restLength = (nb.points[s.a].pos - nb.points[s.b].pos).len();
-        s.stiffness = stiff * 0.25f;
-        s.damping = damp * 0.5f;
-        s.isBrace = true;
-        nb.springs.push_back(s);
-    }
-
-    const float newA = std::max(1e-4f, nb.convexHullArea());
-    nb.pressureTarget = std::max(pressureTargetHint * 0.96f, newA * 22.f);
+    nb.pressureTarget = std::max(pressureTargetHint * 0.96f,
+                                 kPi * radius * radius * kPressurePerArea);
     nb.pressureK = pk;
     nb.restitution = restitution;
     nb.friction = friction;
     nb.perimeterTearRatio = perimTear;
     nb.braceTearRatio = braceTear;
     nb.tag = tag;
+    nb.colorIndex = colorIndex;
+    nb.playerControlled = true;
     return nb;
 }
 
@@ -327,6 +265,79 @@ SoftBody rebuildConvexFragment(const SoftBody& orig, const std::vector<int>& com
     nb.perimeterTearRatio = orig.perimeterTearRatio;
     nb.braceTearRatio = orig.braceTearRatio;
     nb.tag = orig.tag;
+    nb.colorIndex = orig.colorIndex;
+    nb.playerControlled = orig.playerControlled;
+    return nb;
+}
+
+float pointMassTotal(const SoftBody& sb) {
+    float total = 0.f;
+    for (const auto& p : sb.points) total += p.mass;
+    return total;
+}
+
+float pointMassTotal(const SoftBody& sb, const std::vector<int>& ids) {
+    float total = 0.f;
+    for (int id : ids) total += sb.points[(size_t)id].mass;
+    return total;
+}
+
+Vec2 pointMassCentroid(const SoftBody& sb, const std::vector<int>& ids) {
+    Vec2 c{0.f, 0.f};
+    float total = 0.f;
+    for (int id : ids) {
+        const PointMass& p = sb.points[(size_t)id];
+        c += p.pos * p.mass;
+        total += p.mass;
+    }
+    return total > 1e-8f ? c * (1.f / total) : sb.centroid();
+}
+
+Vec2 pointMassVelocity(const SoftBody& sb, const std::vector<int>& ids) {
+    Vec2 v{0.f, 0.f};
+    float total = 0.f;
+    for (int id : ids) {
+        const PointMass& p = sb.points[(size_t)id];
+        v += p.vel * p.mass;
+        total += p.mass;
+    }
+    return total > 1e-8f ? v * (1.f / total) : sb.averageVelocity();
+}
+
+void springTuningFromSoftBody(const SoftBody& orig, float& stiff, float& damp) {
+    stiff = 1200.f;
+    damp = 25.f;
+    for (const Spring& sp : orig.springs) {
+        if (sp.broken || sp.isBrace) continue;
+        stiff = sp.stiffness;
+        damp = sp.damping;
+        return;
+    }
+}
+
+SoftBody makeRoundedSplitFragment(const SoftBody& orig, const std::vector<int>& ids,
+                                  Vec2 center, float radius, int segments, Vec2 extraVel) {
+    float stiff = 1200.f;
+    float damp = 25.f;
+    springTuningFromSoftBody(orig, stiff, damp);
+
+    const float mass = std::max(0.001f, pointMassTotal(orig, ids));
+    SoftBody nb = SoftBody::makeCircle(center, radius, segments, mass, stiff, damp);
+    nb.pressureK = orig.pressureK;
+    nb.restitution = orig.restitution;
+    nb.friction = orig.friction;
+    nb.perimeterTearRatio = orig.perimeterTearRatio;
+    nb.braceTearRatio = orig.braceTearRatio;
+    nb.tag = orig.tag;
+    nb.colorIndex = orig.colorIndex;
+    nb.playerControlled = orig.playerControlled;
+    nb.pressureTarget = std::max(1e-4f, 3.14159265f * radius * radius * 24.f);
+
+    const Vec2 v = pointMassVelocity(orig, ids) + extraVel;
+    for (auto& p : nb.points) {
+        p.vel = v;
+        p.prev = p.pos;
+    }
     return nb;
 }
 
@@ -556,7 +567,7 @@ inline void resolveSoftPair(SoftBody& X, SoftBody& Y, float restitution, float f
     }
 }
 
-/// Soft-soft separation between player slimes. Three passes are enough:
+/// Soft-soft separation between player slimes and same-player fragments. Three passes are enough:
 /// each contact resolution is bounded, so additional passes only refine
 /// (no energy pumping). Replaces the old COM-shove model.
 void resolvePlayerSlimesMutualRepulsion(std::vector<std::unique_ptr<SoftBody>>& softBodies) {
@@ -580,7 +591,6 @@ void resolvePlayerSlimesMutualRepulsion(std::vector<std::unique_ptr<SoftBody>>& 
             for (size_t j = i + 1; j < n; ++j) {
                 SoftBody& B = *softBodies[j];
                 if (!isNetworkedPlayerSlimeTag(B.tag)) continue;
-                if (A.tag == B.tag) continue;
                 if (!A.aabb().overlaps(B.aabb())) continue;
                 resolveSoftPair(A, B, kPairRest, kPairFric);
                 resolveSoftPair(B, A, kPairRest, kPairFric);
@@ -627,15 +637,17 @@ void World::mergeSoftBodiesWithTag(int tag, float pressureTargetHint) {
     if (rm.size() <= 1 || all.size() < 3) return;
 
     float perimTear = 0.f, braceTear = 0.f;
+    uint8_t colorIndex = 0;
     for (auto& sb : softBodies_) {
         if (sb->tag == tag) {
             perimTear = sb->perimeterTearRatio;
             braceTear = sb->braceTearRatio;
+            colorIndex = sb->colorIndex;
             break;
         }
     }
-    SoftBody merged = buildMergedConvexSoftBody(std::move(all), stiff, damp, pk, pressureTargetHint, rest,
-                                                fric, perimTear, braceTear, tag);
+    SoftBody merged = buildMergedRoundedSoftBody(std::move(all), stiff, damp, pk, pressureTargetHint, rest,
+                                                 fric, perimTear, braceTear, tag, colorIndex);
     if (merged.points.size() < 3) return;
 
     std::sort(rm.begin(), rm.end(), std::greater<size_t>());
@@ -649,6 +661,7 @@ bool World::splitLargestBlobWithTag(int tag, Vec2 axisDir) {
     for (size_t i = 0; i < softBodies_.size(); ++i) {
         SoftBody& sb = *softBodies_[i];
         if (sb.tag != tag) continue;
+        if (!sb.playerControlled) continue;
         if ((int)sb.points.size() > bestCount) {
             bestCount = (int)sb.points.size();
             bestIdx = (int)i;
@@ -696,6 +709,7 @@ bool World::angularBisectLargestBlobWithTag(int tag, Vec2 axisDir) {
     for (size_t i = 0; i < softBodies_.size(); ++i) {
         SoftBody& sb = *softBodies_[i];
         if (sb.tag != tag) continue;
+        if (!sb.playerControlled) continue;
         if ((int)sb.points.size() > bestCount) {
             bestCount = (int)sb.points.size();
             bestIdx = (int)i;
@@ -709,76 +723,70 @@ bool World::angularBisectLargestBlobWithTag(int tag, Vec2 axisDir) {
     Vec2 c = sb.centroid();
     if (axisDir.lenSq() < 1e-8f) axisDir = {1.f, 0.f};
     Vec2 dir = axisDir.normalized();
-    Vec2 cutNormal{-dir.y, dir.x};
+    Vec2 cutNormal = dir;
 
-    auto tryHalves = [&](const std::vector<int>& A, const std::vector<int>& B) -> bool {
-        if ((int)A.size() < 3 || (int)B.size() < 3) return false;
-        SoftBody na = rebuildConvexFragment(sb, A);
-        SoftBody nb = rebuildConvexFragment(sb, B);
-        if (na.points.size() < 3 || nb.points.size() < 3) return false;
-        const float kick = 1.4f;
-        Vec2 ca = na.centroid();
-        Vec2 cb = nb.centroid();
-        Vec2 sep = cb - ca;
-        if (sep.lenSq() > 1e-8f) {
-            sep = sep * (1.f / sep.len());
-            for (auto& p : na.points) p.vel -= sep * kick;
-            for (auto& p : nb.points) p.vel += sep * kick;
-        }
-        removeSoftBodyAt((size_t)bestIdx);
-        addSoftBody(std::move(na));
-        addSoftBody(std::move(nb));
-        return true;
-    };
-
-    std::vector<std::pair<float, int>> ord;
-    ord.reserve((size_t)n);
+    std::vector<std::pair<float, int>> bySide;
+    bySide.reserve((size_t)n);
     for (int k = 0; k < n; ++k) {
-        Vec2 d = sb.points[(size_t)k].pos - c;
-        ord.push_back({std::atan2(d.y, d.x), k});
+        bySide.push_back({dot(sb.points[(size_t)k].pos - c, cutNormal), k});
     }
-    std::sort(ord.begin(), ord.end(),
+    std::sort(bySide.begin(), bySide.end(),
               [](const std::pair<float, int>& a, const std::pair<float, int>& b) {
                   return a.first < b.first;
               });
-    int half = n / 2;
-    half = (int)clamp((float)half, 3.f, (float)(n - 3));
-
-    int bestStart = 0;
-    float bestScore = -1e30f;
-    for (int start = 0; start < n; ++start) {
-        Vec2 aMean{0.f, 0.f};
-        Vec2 bMean{0.f, 0.f};
-        for (int i = 0; i < half; ++i) {
-            const int gi = ord[(size_t)((start + i) % n)].second;
-            aMean += sb.points[(size_t)gi].pos;
-        }
-        for (int i = half; i < n; ++i) {
-            const int gi = ord[(size_t)((start + i) % n)].second;
-            bMean += sb.points[(size_t)gi].pos;
-        }
-        aMean *= (1.f / (float)half);
-        bMean *= (1.f / (float)(n - half));
-        const Vec2 sep = bMean - aMean;
-        float score = sep.lenSq() > 1e-8f ? std::abs(dot(sep.normalized(), cutNormal)) : 0.f;
-        if (score > bestScore) {
-            bestScore = score;
-            bestStart = start;
-        }
-    }
 
     std::vector<int> A, B;
+    const int half = (int)clamp((float)(n / 2), 3.f, (float)(n - 3));
     A.reserve((size_t)half);
     B.reserve((size_t)(n - half));
-    for (int i = 0; i < half; ++i) A.push_back(ord[(size_t)((bestStart + i) % n)].second);
-    for (int i = half; i < n; ++i) B.push_back(ord[(size_t)((bestStart + i) % n)].second);
-    return tryHalves(A, B);
+    for (int i = 0; i < half; ++i) A.push_back(bySide[(size_t)i].second);
+    for (int i = half; i < n; ++i) B.push_back(bySide[(size_t)i].second);
+    if ((int)A.size() < 3 || (int)B.size() < 3) return false;
+
+    Vec2 ca = pointMassCentroid(sb, A);
+    Vec2 cb = pointMassCentroid(sb, B);
+    Vec2 sep = cb - ca;
+    if (dot(sep, cutNormal) < 0.f) sep = -sep;
+    if (sep.lenSq() < 1e-8f) sep = cutNormal;
+    sep = sep.normalized();
+
+    const float totalMass = std::max(0.001f, pointMassTotal(sb));
+    const float massA = pointMassTotal(sb, A);
+    const float massB = pointMassTotal(sb, B);
+    const float area = std::max(0.14f, sb.convexHullArea());
+    constexpr float kPi = 3.14159265f;
+    float radiusA = std::sqrt(std::max(0.045f, area * (massA / totalMass)) / kPi);
+    float radiusB = std::sqrt(std::max(0.045f, area * (massB / totalMass)) / kPi);
+    radiusA = clamp(radiusA, 0.28f, 1.1f);
+    radiusB = clamp(radiusB, 0.28f, 1.1f);
+
+    const float wantedSep = (radiusA + radiusB) * 1.08f;
+    const float haveSep = (cb - ca).len();
+    if (haveSep < wantedSep) {
+        const float push = (wantedSep - haveSep) * 0.5f;
+        ca -= sep * push;
+        cb += sep * push;
+    }
+
+    const int segA = (int)clamp((float)A.size() + 2.f, 10.f, 18.f);
+    const int segB = (int)clamp((float)B.size() + 2.f, 10.f, 18.f);
+    const float mainNudge = 0.55f;
+    const float throwSpeed = 10.5f;
+    SoftBody na = makeRoundedSplitFragment(sb, A, ca, radiusA, segA, -sep * mainNudge);
+    SoftBody nb = makeRoundedSplitFragment(sb, B, cb, radiusB, segB, dir * throwSpeed);
+    na.playerControlled = true;
+    nb.playerControlled = false;
+
+    removeSoftBodyAt((size_t)bestIdx);
+    addSoftBody(std::move(na));
+    addSoftBody(std::move(nb));
+    return true;
 }
 
 bool World::playerSplitLargestBlobWithTag(int tag, Vec2 axisDir) {
     // Player-triggered split should be deterministic and binary: exactly two
-    // contiguous angular fragments. The spring-break variant can occasionally
-    // produce 3+ components when pre-damaged springs already exist.
+    // stable child blobs. Reusing the old outline creates needle/triangle shards
+    // when the slime is flattened against terrain, so rebuild rounded pieces.
     return angularBisectLargestBlobWithTag(tag, axisDir);
 }
 

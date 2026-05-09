@@ -59,7 +59,8 @@ private:
     void onReceive(_ENetPeer* peer, const uint8_t* data, size_t len);
 
     void handleListRooms(_ENetPeer* peer);
-    void handleCreateRoom(_ENetPeer* peer, const uint8_t* name, uint8_t nameLen);
+    void handleCreateRoom(_ENetPeer* peer, const uint8_t* name, uint8_t nameLen,
+                          int maxPlayers, uint8_t optionsFlags);
     void handleJoinRoom(_ENetPeer* peer, uint32_t roomId);
     void handleLeaveRoom(_ENetPeer* peer);
     void handleClientInput(_ENetPeer* peer, const ClientInputMsg& m);

@@ -88,12 +88,14 @@ Vec2 spawnPosForSlot(int slot) {
 void appendSolidMapEntries(World& world, const std::vector<SolidMapEntry>& entries) {
     auto frictionFor = [](int tag) -> float {
         if (tag == Slime::spikeHazardTag) return 0.4f;
+        if (tag == Slime::airVentTag) return 0.35f;
         return 0.92f;
     };
     for (const auto& e : entries) {
         Body* b = world.createBody(Shape::box(e.halfW, e.halfH), e.pos, BodyType::Static);
         b->tag = e.tag;
         b->friction = frictionFor(e.tag);
+        if (e.tag == Slime::airVentTag) b->restitution = 0.02f;
     }
 }
 
@@ -112,6 +114,11 @@ void buildSceneCore(World& world) {
     auto spikeTri = []() {
         std::vector<Vec2> v{{0.f, -0.42f}, {0.30f, 0.f}, {-0.30f, 0.f}};
         return Shape::polygon(v);
+    };
+    auto addAirVent = [&](Vec2 pos, float halfW = 0.82f) {
+        Body* b = addStatic(Shape::box(halfW, 0.12f), pos, Slime::airVentTag, 0.35f);
+        b->restitution = 0.02f;
+        return b;
     };
 
     // === Bounds ===
@@ -138,6 +145,10 @@ void buildSceneCore(World& world) {
 
     /// Surface « marchable » du sol principal (grass box cy=10.5, halfH=0.6).
     constexpr float kGrassTopY = 10.5f - 0.6f;
+
+    // === Gentle movement props ===
+    addAirVent({-4.7f, kGrassTopY - 0.08f}, 0.82f);
+    addAirVent({16.6f, 6.28f}, 0.68f);
 
     // === Light playground props ===
     for (int i = 0; i < 3; ++i) {

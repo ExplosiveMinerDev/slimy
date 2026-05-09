@@ -52,7 +52,8 @@ public:
     void drawChatTypingBar(const char* draftUtf8);
     /// Draws a remote slime body (perimeter polygon) from raw world-space points.
     /// Used by the client to render slimes received from the server.
-    void drawRemoteSlimeBody(const std::vector<Vec2>& worldPoints, bool isLocalPlayer);
+    void drawRemoteSlimeBody(const std::vector<Vec2>& worldPoints, bool isLocalPlayer,
+                             uint8_t colorIndex = 0);
     /// Small spike triangles stuck on the slime (solo / exact offsets).
     void drawSlimeEmbeddedSpikes(Vec2 centroidWorld, const std::vector<Vec2>& radialOffsets);
     /// Decorative spikes from count only (online snapshots — angles from golden ratio).

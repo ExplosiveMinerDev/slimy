@@ -36,6 +36,7 @@ public:
     static constexpr int ballTag = 7;
     /// Solides décor / tests carte (ex. caillou rouge dans default.sjmap).
     static constexpr int mapTestRockTag = 8;
+    static constexpr int airVentTag = 9;
 
     /// Launch velocity magnitudes (world units / s) — applied along the aim direction.
     /// (Tuned at ~80% of the original feel — momentum reduced by 20%.)
@@ -62,6 +63,10 @@ public:
 
     /// Re-merge fragments handler reads this externally.
     float basePressureTarget() const { return basePressure_; }
+    uint8_t colorIndex() const { return colorIndex_; }
+    void setColorIndex(World& world, uint8_t colorIndex);
+    void cycleColor(World& world);
+    bool cycleControlledFragment(World& world, int dir = 1);
 
     /// `tag` lets multi-player setups give each Slime instance a unique blob tag.
     void spawn(World& world, const Vec2& pos, float radius = 0.9f, int segments = 22,
@@ -92,6 +97,7 @@ public:
     const std::vector<SlimePuddle>& puddles() const { return puddles_; }
 
     static Vec2 playerMassCentroid(const World& world, int tag = playerTag);
+    static Vec2 playerControlledCentroid(const World& world, int tag = playerTag);
     static int playerBlobCount(const World& world, int tag = playerTag);
 
     int myTag() const { return myTag_; }
@@ -103,7 +109,9 @@ public:
 
 private:
     void applyFragmentGather(float dt, World& world, bool gatherHeld);
+    void mergeGatheredFragmentsOnContact(World& world, bool gatherHeld);
     void applySpikeHazard(float dt, World& world);
+    void applyEnvironmentProps(float dt, World& world);
     void syncEmbeddedSpikes(float dt, const World& world);
     void updateGrabThrow(float dt, World& world, bool grabHeld);
     void launch(World& world, const Vec2& aimDir);
@@ -111,8 +119,10 @@ private:
     void emitContinuousTrail(float dt, World& world);
     void applyTrailGlue(World& world);
     void fadeTrail(float dt);
+    float restPressureForBlob(const SoftBody& sb, float taggedMass) const;
 
     int myTag_ = playerTag;
+    uint8_t colorIndex_ = 0;
     /// Time spent in spike overlap this snag (seconds) — used for "lose a chunk" on exit.
     float spikeDwell_ = 0.f;
     /// Cooldown after a spike-induced split so grazing doesn't chain-cut.
@@ -142,6 +152,7 @@ private:
     /// Cooldown before next continuous-trail puddle drop (seconds).
     float trailEmitCd_ = 0.f;
     float jumpCooldownRemaining_ = 0.f;
+    float manualSplitCooldown_ = 0.f;
     Vec2 aimDir_{0.f, -1.f};
 
     /// Eye state — virtual mass-spring secondary motion. Eye lags behind the blob

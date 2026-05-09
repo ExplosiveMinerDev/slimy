@@ -93,10 +93,13 @@ int runSinglePlayer(bool reuseWindow = false) {
     float accumulator = 0.f;
     bool pendingShiftSplit = false;
     bool prevShiftSplitDown = false;
+    int splitBurstFrames = 0;
     Vec2 panStart{0, 0};
     bool panning = false;
     float enterHold = 0.f;
     bool enterMergeLatch = false;
+    float hintRemain = 0.f;
+    std::string hintText;
 
     bool chatOpen = false;
     std::string chatDraft;
@@ -163,10 +166,24 @@ int runSinglePlayer(bool reuseWindow = false) {
             !chatTyping;
         const bool shiftSplitDown =
             shiftDown && IsMouseButtonDown(MOUSE_BUTTON_LEFT) && !chatTyping;
-        const bool shiftSplitClick = shiftSplitDown && !prevShiftSplitDown;
+        if (shiftSplitDown && !prevShiftSplitDown) splitBurstFrames = 4;
         prevShiftSplitDown = shiftSplitDown;
+        const bool shiftSplitClick = splitBurstFrames > 0;
+        if (splitBurstFrames > 0) --splitBurstFrames;
         if (shiftSplitClick) pendingShiftSplit = true;
         const bool grabHeld = IsKeyDown(KEY_E) && !chatTyping;
+        if (!chatTyping && IsKeyPressed(KEY_C)) {
+            if (slime.cycleControlledFragment(world)) {
+                hintText = "Fragment controle change";
+                hintRemain = 1.4f;
+            }
+        }
+        if (!chatTyping && IsKeyPressed(KEY_F)) {
+            slime.cycleColor(world);
+            hintText = "Couleur du slime changee";
+            hintRemain = 1.4f;
+        }
+        hintRemain = std::max(0.f, hintRemain - frameTime);
 
         bool enterDown =
             (IsKeyDown(KEY_ENTER) || IsKeyDown(KEY_KP_ENTER)) && !chatTyping;
@@ -183,6 +200,9 @@ int runSinglePlayer(bool reuseWindow = false) {
 
         if (!chatOpen && IsKeyPressed(KEY_R)) {
             resetScene(world, slime);
+            pendingShiftSplit = false;
+            prevShiftSplitDown = false;
+            splitBurstFrames = 0;
             enterHold = 0.f;
             enterMergeLatch = false;
         }
@@ -226,17 +246,18 @@ int runSinglePlayer(bool reuseWindow = false) {
         }
 
         if (Slime::playerBlobCount(world, slime.myTag()) > 0) {
-            Vec2 c = Slime::playerMassCentroid(world, slime.myTag());
+            Vec2 c = Slime::playerControlledCentroid(world, slime.myTag());
             renderer.camera.target += (c - renderer.camera.target) * std::min(1.f, frameTime * 2.65f);
         }
 
         renderer.beginFrame();
         renderer.drawWorld(world, &slime.puddles());
+        if (hintRemain > 0.f) renderer.drawHUDBanner(hintText);
         if (slime.stuckSpikeCount() > 0 && Slime::playerBlobCount(world, slime.myTag()) > 0) {
             std::vector<Vec2> spikeOff;
             slime.embeddedSpikeDrawOffsets(world, spikeOff);
             if (!spikeOff.empty()) {
-                Vec2 o = Slime::playerMassCentroid(world, slime.myTag());
+                Vec2 o = Slime::playerControlledCentroid(world, slime.myTag());
                 renderer.drawSlimeEmbeddedSpikes(o, spikeOff);
             }
         }
@@ -245,12 +266,12 @@ int runSinglePlayer(bool reuseWindow = false) {
                                    slime.playerVelocity(), slime.visualRadius());
         }
         if (slime.charging() && Slime::playerBlobCount(world, slime.myTag()) > 0) {
-            Vec2 origin = Slime::playerMassCentroid(world, slime.myTag());
+            Vec2 origin = Slime::playerControlledCentroid(world, slime.myTag());
             renderer.drawAimIndicator(origin, slime.aimDir(), slime.chargeFraction());
         }
         if (soloBubbleRemain > 0.f && !soloBubbleText.empty() &&
             Slime::playerBlobCount(world, slime.myTag()) > 0) {
-            Vec2 c = Slime::playerMassCentroid(world, slime.myTag());
+            Vec2 c = Slime::playerControlledCentroid(world, slime.myTag());
             const float radius = slime.visualRadius();
             const Vec2 anchor = c + Vec2{0.f, -radius - 0.1f};
             renderer.drawSlimeChatBubble(anchor, soloBubbleText.c_str(),
@@ -286,6 +307,7 @@ struct LobbyUIState {
     std::string createDraft;
     bool createFocused = false;
     bool justRequested = false;
+    int maxPlayers = net::kMaxPlayers;
 };
 
 void drawLobbyBrowser(net::Client& client, LobbyUIState& ui, bool& wantQuit,
@@ -362,6 +384,30 @@ void drawLobbyBrowser(net::Client& client, LobbyUIState& ui, bool& wantQuit,
     }
 
     // Create-room field (single line, Enter to confirm).
+    const int optionsY = H - 152;
+    Rectangle minusBox{ (float)colX, (float)optionsY, 34.f, 28.f };
+    Rectangle plusBox{ (float)colX + 116.f, (float)optionsY, 34.f, 28.f };
+    const bool hotMinus = CheckCollisionPointRec(m, minusBox);
+    const bool hotPlus = CheckCollisionPointRec(m, plusBox);
+    DrawText("Options partie", colX, optionsY - 20, 14, inkDim);
+    DrawRectangle((int)minusBox.x, (int)minusBox.y, (int)minusBox.width, (int)minusBox.height,
+                  hotMinus ? rowHi : rowBg);
+    DrawRectangle((int)plusBox.x, (int)plusBox.y, (int)plusBox.width, (int)plusBox.height,
+                  hotPlus ? rowHi : rowBg);
+    DrawRectangleLines((int)minusBox.x, (int)minusBox.y, (int)minusBox.width, (int)minusBox.height,
+                       border);
+    DrawRectangleLines((int)plusBox.x, (int)plusBox.y, (int)plusBox.width, (int)plusBox.height,
+                       border);
+    DrawText("-", (int)minusBox.x + 13, (int)minusBox.y + 4, 22, ink);
+    DrawText("+", (int)plusBox.x + 11, (int)plusBox.y + 5, 20, ink);
+    char maxPlayersLabel[64];
+    std::snprintf(maxPlayersLabel, sizeof(maxPlayersLabel), "joueurs max: %d", ui.maxPlayers);
+    DrawText(maxPlayersLabel, colX + 44, optionsY + 7, 14, ink);
+    DrawText("C: fragment | F: couleur | Ctrl: rassembler", colX + 170, optionsY + 7, 14,
+             inkDim);
+    if (click && hotMinus) ui.maxPlayers = std::max(1, ui.maxPlayers - 1);
+    if (click && hotPlus) ui.maxPlayers = std::min(net::kMaxPlayers, ui.maxPlayers + 1);
+
     const int inputY = H - 116;
     Rectangle ipBox{ (float)colX, (float)inputY, (float)colW, 36.f };
     const bool hotInput = CheckCollisionPointRec(m, ipBox);
@@ -397,7 +443,7 @@ void drawLobbyBrowser(net::Client& client, LobbyUIState& ui, bool& wantQuit,
         }
         if (IsKeyPressed(KEY_BACKSPACE)) popLastUtf8Codepoint(ui.createDraft);
         if (IsKeyPressed(KEY_ENTER) && !ui.createDraft.empty()) {
-            client.createRoom(ui.createDraft);
+            client.createRoom(ui.createDraft, ui.maxPlayers);
             ui.justRequested = true;
         }
     }
@@ -460,6 +506,9 @@ bool runOnlineSession(const std::string& host, uint16_t port, std::string& errOu
     bool chatOpen = false;
     std::string chatDraft;
     LobbyUIState lobbyUi;
+    uint8_t localSlimeColor = 0;
+    float hintRemain = 0.f;
+    std::string hintText;
 
     char serverAddr[80];
     std::snprintf(serverAddr, sizeof(serverAddr), "%s:%u", host.c_str(), (unsigned)port);
@@ -568,6 +617,17 @@ bool runOnlineSession(const std::string& host, uint16_t port, std::string& errOu
         prevShiftSplitDown = shiftSplitDown;
         const bool shiftSplitClick = splitBurstFrames > 0;
         if (splitBurstFrames > 0) --splitBurstFrames;
+        const bool switchFragmentClick = !chatTyping && IsKeyPressed(KEY_C);
+        if (!chatTyping && IsKeyPressed(KEY_F)) {
+            localSlimeColor = (uint8_t)((localSlimeColor + 1) % 8);
+            hintText = "Couleur du slime changee";
+            hintRemain = 1.4f;
+        }
+        if (switchFragmentClick) {
+            hintText = "Fragment controle change";
+            hintRemain = 1.4f;
+        }
+        hintRemain = std::max(0.f, hintRemain - frameTime);
 
         float wheel = GetMouseWheelMove();
         if (wheel != 0.f) {
@@ -593,18 +653,17 @@ bool runOnlineSession(const std::string& host, uint16_t port, std::string& errOu
         }
 
         client.sendInput(mouseWorld, jumpHeld, mergeHeld, grabHeld, respawnHeld, gatherHeld,
-                         shiftSplitClick);
+                         shiftSplitClick, switchFragmentClick, localSlimeColor);
         client.tickChatBubbles(frameTime);
         client.advanceInterpolation();
         client.updateNetTrail(frameTime);
         applyNetRigidsToWorld(viewWorld, client.displayRigids());
 
         for (auto& rs : client.displaySlimes()) {
-            if (rs.isLocalPlayer) {
-                renderer.camera.target +=
-                    (rs.centroid - renderer.camera.target) * std::min(1.f, frameTime * 2.65f);
-                break;
-            }
+            if (!rs.isLocalPlayer || !rs.isPrimaryFragment) continue;
+            renderer.camera.target +=
+                (rs.centroid - renderer.camera.target) * std::min(1.f, frameTime * 2.65f);
+            break;
         }
 
         renderer.beginFrame();
@@ -612,8 +671,8 @@ bool runOnlineSession(const std::string& host, uint16_t port, std::string& errOu
         client.copyNetTrailForDraw(netTrails);
         renderer.drawWorld(viewWorld, netTrails.empty() ? nullptr : &netTrails);
         for (auto& rs : client.displaySlimes()) {
-            renderer.drawRemoteSlimeBody(rs.points, rs.isLocalPlayer);
-            if (rs.embeddedSpikeCount > 0 && !rs.points.empty()) {
+            renderer.drawRemoteSlimeBody(rs.points, rs.isLocalPlayer, rs.colorIndex);
+            if (rs.isPrimaryFragment && rs.embeddedSpikeCount > 0 && !rs.points.empty()) {
                 float rad = 0.9f;
                 for (auto& p : rs.points)
                     rad = std::max(rad, distance(p, rs.centroid));
@@ -622,6 +681,7 @@ bool runOnlineSession(const std::string& host, uint16_t port, std::string& errOu
             }
         }
         for (auto& rs : client.displaySlimes()) {
+            if (!rs.isPrimaryFragment) continue;
             float radius = 0.9f;
             if (!rs.points.empty()) {
                 float maxR = 0.f;
@@ -632,6 +692,7 @@ bool runOnlineSession(const std::string& host, uint16_t port, std::string& errOu
             renderer.drawSlimeFace(rs.leftEye, rs.rightEye, rs.vel, radius);
         }
         for (auto& rs : client.displaySlimes()) {
+            if (!rs.isPrimaryFragment) continue;
             const int sid = (int)rs.ownerId;
             const std::string* bubble = client.chatBubbleText(sid);
             if (!bubble || bubble->empty()) continue;
@@ -648,6 +709,7 @@ bool runOnlineSession(const std::string& host, uint16_t port, std::string& errOu
         }
         if (chatOpen) renderer.drawChatTypingBar(chatDraft.c_str());
         for (auto& rs : client.displaySlimes()) {
+            if (!rs.isPrimaryFragment) continue;
             if (!rs.isLocalPlayer || rs.points.empty()) continue;
             if (!rs.isCharging || rs.chargeFrac <= 0.01f) continue;
             Vec2 dir = (rs.aim - rs.centroid).normalized();
@@ -656,6 +718,8 @@ bool runOnlineSession(const std::string& host, uint16_t port, std::string& errOu
         }
         if (g_clientAutoUpdateBusy.load()) {
             renderer.drawHUDBanner("Telechargement de la mise a jour...");
+        } else if (hintRemain > 0.f) {
+            renderer.drawHUDBanner(hintText);
         } else if (client.needsClientUpgrade()) {
             char banner[160];
             std::snprintf(banner, sizeof(banner),

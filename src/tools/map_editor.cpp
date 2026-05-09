@@ -51,6 +51,7 @@ Color colorForTag(int tag) {
     if (tag == pe::Slime::grassTag) return {50, 120, 80, 200};
     if (tag == pe::Slime::stoneTag) return {70, 90, 100, 200};
     if (tag == pe::Slime::mapTestRockTag) return {180, 70, 60, 200};
+    if (tag == pe::Slime::airVentTag) return {80, 180, 190, 190};
     return {90, 140, 100, 200};
 }
 
@@ -58,6 +59,7 @@ const char* labelForTag(int tag) {
     if (tag == pe::Slime::grassTag) return "grass";
     if (tag == pe::Slime::stoneTag) return "stone";
     if (tag == pe::Slime::mapTestRockTag) return "redrock";
+    if (tag == pe::Slime::airVentTag) return "vent";
     return "platform";
 }
 
@@ -65,6 +67,7 @@ void cycleTag(int& tag) {
     if (tag == pe::Slime::grassTag) tag = pe::Slime::stoneTag;
     else if (tag == pe::Slime::stoneTag) tag = pe::Slime::platformTag;
     else if (tag == pe::Slime::platformTag) tag = pe::Slime::mapTestRockTag;
+    else if (tag == pe::Slime::mapTestRockTag) tag = pe::Slime::airVentTag;
     else tag = pe::Slime::grassTag;
 }
 
@@ -125,6 +128,7 @@ int main() {
     float accum = 0.f;
     bool pendingShiftSplit = false;
     bool prevShiftSplitDown = false;
+    int splitBurstFrames = 0;
     float enterHoldTest = 0.f;
     bool enterMergeLatchTest = false;
 
@@ -299,6 +303,8 @@ int main() {
                 slime.spawn(world, pe::kSpawnPos);
                 accum = 0.f;
                 pendingShiftSplit = false;
+                prevShiftSplitDown = false;
+                splitBurstFrames = 0;
                 enterHoldTest = 0.f;
                 enterMergeLatchTest = false;
                 status = "TEST — Esc = Edit   Space = jump   Shift+LMB = split   Ctrl = gather   Enter = merge";
@@ -310,6 +316,8 @@ int main() {
                 rebuildWorld();
                 sel = -1;
                 pendingShiftSplit = false;
+                prevShiftSplitDown = false;
+                splitBurstFrames = 0;
                 enterHoldTest = 0.f;
                 enterMergeLatchTest = false;
                 status = "Edit mode";
@@ -328,8 +336,10 @@ int main() {
                  (IsMouseButtonDown(MOUSE_BUTTON_LEFT) && !shiftDown));
             const bool shiftSplitDown =
                 shiftDown && IsMouseButtonDown(MOUSE_BUTTON_LEFT);
-            const bool shiftSplitClick = shiftSplitDown && !prevShiftSplitDown;
+            if (shiftSplitDown && !prevShiftSplitDown) splitBurstFrames = 4;
             prevShiftSplitDown = shiftSplitDown;
+            const bool shiftSplitClick = splitBurstFrames > 0;
+            if (splitBurstFrames > 0) --splitBurstFrames;
             if (shiftSplitClick) pendingShiftSplit = true;
             const bool grabHeld = IsKeyDown(KEY_E);
 
@@ -362,7 +372,7 @@ int main() {
             }
 
             if (pe::Slime::playerBlobCount(world, slime.myTag()) > 0) {
-                Vec2 c = pe::Slime::playerMassCentroid(world, slime.myTag());
+                Vec2 c = pe::Slime::playerControlledCentroid(world, slime.myTag());
                 renderer.camera.target += (c - renderer.camera.target) * std::min(1.f, frameTime * 2.65f);
             }
 
@@ -399,7 +409,7 @@ int main() {
             std::vector<pe::Vec2> spikeOff;
             slime.embeddedSpikeDrawOffsets(world, spikeOff);
             if (!spikeOff.empty()) {
-                pe::Vec2 o = pe::Slime::playerMassCentroid(world, slime.myTag());
+                pe::Vec2 o = pe::Slime::playerControlledCentroid(world, slime.myTag());
                 renderer.drawSlimeEmbeddedSpikes(o, spikeOff);
             }
         }
@@ -407,7 +417,7 @@ int main() {
             renderer.drawSlimeFace(slime.leftEye(), slime.rightEye(), slime.playerVelocity(),
                                    slime.visualRadius());
             if (slime.charging() && pe::Slime::playerBlobCount(world, slime.myTag()) > 0) {
-                Vec2 origin = pe::Slime::playerMassCentroid(world, slime.myTag());
+                Vec2 origin = pe::Slime::playerControlledCentroid(world, slime.myTag());
                 renderer.drawAimIndicator(origin, slime.aimDir(), slime.chargeFraction());
             }
         }

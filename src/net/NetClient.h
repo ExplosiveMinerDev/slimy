@@ -18,7 +18,9 @@ namespace pe::net {
 /// Client-side mirror of one remote slime, decoded from a server snapshot.
 struct RemoteSlime {
     uint32_t ownerId = 0;
+    uint8_t fragmentId = 0;
     bool isLocalPlayer = false;
+    bool isPrimaryFragment = true;
     Vec2 centroid{0, 0};
     Vec2 vel{0, 0};
     Vec2 leftEye{0, 0}, rightEye{0, 0};
@@ -26,6 +28,7 @@ struct RemoteSlime {
     float chargeFrac = 0.f;
     bool isCharging = false;
     uint8_t embeddedSpikeCount = 0;
+    uint8_t colorIndex = 0;
     std::vector<Vec2> points;
     std::vector<TrailDropNet> trail;
 };
@@ -43,6 +46,7 @@ struct LobbyRoomInfo {
     std::string name;
     int playerCount = 0;
     int maxPlayers = kMaxPlayers;
+    uint8_t optionsFlags = 0;
 };
 
 enum class ClientState : uint8_t {
@@ -83,13 +87,15 @@ public:
 
     /// Lobby-side commands.
     void requestRoomList();
-    void createRoom(const std::string& name);
+    void createRoom(const std::string& name, int maxPlayers = kMaxPlayers,
+                    uint8_t optionsFlags = 0);
     void joinRoom(uint32_t roomId);
     void leaveRoom();
 
     /// In-room input + chat.
     void sendInput(Vec2 aimWorld, bool jumpHeld, bool mergeHeld, bool grabHeld,
-                   bool respawnHeld, bool gatherHeld, bool shiftSplitClick);
+                   bool respawnHeld, bool gatherHeld, bool shiftSplitClick,
+                   bool switchFragmentClick = false, uint8_t colorIndex = 0);
     void sendChat(const std::string& utf8);
 
     void tickChatBubbles(float dt);

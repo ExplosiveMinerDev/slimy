@@ -329,7 +329,8 @@ void SoftBody::accumulateForces(const Vec2& gravity, const std::vector<Body*>& r
                 // platform sides. Pulling hard onto them and damping their (vertical)
                 // tangent fights gravity and hangs the slime on a corner. Attenuate.
                 const bool wallish = std::abs(dir.x) > 0.56f;
-                const float pullScale = wallish ? 0.35f : 1.f;
+                if (wallish) continue;
+                const float pullScale = 1.f;
 
                 Vec2 f = dir * (kPull * w * p.mass * pullScale);
                 float maxMag = kFmaxPerMass * p.mass;
