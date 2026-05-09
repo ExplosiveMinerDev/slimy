@@ -185,13 +185,8 @@ void Room::broadcastSnapshot(_ENetHost* host) {
 
     auto now = clock::now();
     if (now < nextSnap_) return;
-    // ~30 Hz — same target as non-headless listen host; keeps motion closer to solo while
-    // staying lighter than 60 Hz × large UDP payloads on tiny VPS.
-#ifdef PE_HEADLESS_SERVER
-    nextSnap_ = now + std::chrono::milliseconds(33);
-#else
-    nextSnap_ = now + std::chrono::milliseconds(33);
-#endif
+    // ~50 Hz — lower perceived lag vs 30 Hz; still bounded payload vs full 60.
+    nextSnap_ = now + std::chrono::milliseconds(20);
 
     snapIsLocalPatches_.clear();
     for (auto& v : snapPlayerBlobs_) v.clear();

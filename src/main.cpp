@@ -300,66 +300,66 @@ struct LobbyUIState {
 };
 
 void drawLobbyBrowser(net::Client& client, LobbyUIState& ui, bool& wantQuit,
-                      const std::string& serverAddr, bool updateDownloading) {
+                      const std::string& hubHost, bool updateDownloading) {
     const int W = GetScreenWidth();
     const int H = GetScreenHeight();
 
-    // Same palette family as main menu (green pixel theme).
-    DrawRectangle(0, 0, W, H, ::Color{ 10, 22, 14, 255 });
+    DrawRectangle(0, 0, W, H, ::Color{ 12, 18, 14, 255 });
 
-    const ::Color ink      { 232, 248, 236, 255 };
-    const ::Color inkDim   { 140, 188, 156, 255 };
-    const ::Color panelBg  { 18, 58, 38, 255 };
-    const ::Color rowBg    { 36, 94, 64, 255 };
-    const ::Color rowHi    { 62, 158, 104, 255 };
-    const ::Color rowOff   { 30, 58, 44, 255 };
-    const ::Color border   { 100, 200, 130, 255 };
-    const ::Color accent   { 100, 200, 130, 255 };
-    const ::Color warn     { 255, 185, 165, 255 };
-    const ::Color fieldBg  { 12, 42, 28, 255 };
+    const ::Color ink      { 228, 244, 232, 255 };
+    const ::Color inkDim   { 120, 160, 138, 255 };
+    const ::Color panelBg  { 22, 48, 34, 255 };
+    const ::Color rowBg    { 32, 72, 52, 255 };
+    const ::Color rowHi    { 48, 110, 78, 255 };
+    const ::Color rowOff   { 28, 44, 36, 255 };
+    const ::Color border   { 72, 140, 100, 255 };
+    const ::Color accent   { 120, 210, 160, 255 };
+    const ::Color warn     { 255, 175, 150, 255 };
+    const ::Color fieldBg  { 16, 36, 26, 255 };
 
     const ::Vector2 m = GetMousePosition();
     const bool click = IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
 
-    // Centered panel.
-    const int colW = std::min(720, W - 80);
+    const int colW = std::min(640, W - 72);
     const int colX = (W - colW) / 2;
-    const int panelY = 42;
-    const int panelH = H - 84;
+    const int panelY = 36;
+    const int panelH = H - 72;
     DrawRectangle(colX, panelY, colW, panelH, panelBg);
     DrawRectangleLines(colX, panelY, colW, panelH, border);
 
-    // Header
-    DrawText("SERVERS", colX + 20, panelY + 18, 28, ink);
-    DrawText(serverAddr.c_str(), colX + 20, panelY + 52, 14, inkDim);
+    const int padL = 18;
+    int headY = panelY + 16;
+    DrawText("Salles", colX + padL, headY, 22, ink);
+    headY += 30;
+    DrawText(hubHost.c_str(), colX + padL, headY, 15, inkDim);
+    headY += 20;
 
     const auto& rooms = client.roomList();
 
-    // Room list
-    int listY = panelY + 84;
-    const int rowH = 34;
-    const int rowGap = 4;
-    const int listBottom = H - 166;
+    int listY = headY + 22;
+    const int rowH = 30;
+    const int rowGap = 3;
+    const int listBottom = H - 158;
     const int listMaxRows = std::max(1, (listBottom - listY) / (rowH + rowGap));
     const int rowsToDraw = std::min((int)rooms.size(), listMaxRows);
 
     for (int i = 0; i < rowsToDraw; ++i) {
         const auto& r = rooms[(size_t)i];
         const bool full = r.playerCount >= r.maxPlayers;
-        Rectangle rect{ (float)colX, (float)listY, (float)colW, (float)rowH };
+        Rectangle rect{ (float)colX + padL - 8, (float)listY, (float)colW - 2 * (padL - 8),
+                        (float)rowH };
         const bool hot = !full && CheckCollisionPointRec(m, rect);
         ::Color bg = full ? rowOff : (hot ? rowHi : rowBg);
         DrawRectangle((int)rect.x, (int)rect.y, (int)rect.width, (int)rect.height, bg);
-        if (hot) DrawRectangle((int)rect.x, (int)rect.y + (int)rect.height - 2, (int)rect.width, 2, accent);
 
-        DrawText(r.name.c_str(), (int)rect.x + 14, (int)rect.y + 9, 18,
+        DrawText(r.name.c_str(), (int)rect.x + 10, (int)rect.y + 7, 16,
                  full ? inkDim : ink);
 
-        char pc[32];
-        std::snprintf(pc, sizeof(pc), "%d / %d", r.playerCount, r.maxPlayers);
-        const int pcW = MeasureText(pc, 16);
-        DrawText(pc, (int)rect.x + (int)rect.width - 14 - pcW,
-                 (int)rect.y + 9, 16, full ? warn : inkDim);
+        char pc[24];
+        std::snprintf(pc, sizeof(pc), "%d/%d", r.playerCount, r.maxPlayers);
+        const int pcW = MeasureText(pc, 14);
+        DrawText(pc, (int)(rect.x + rect.width) - 10 - pcW,
+                 (int)rect.y + 8, 14, full ? warn : inkDim);
 
         if (hot && click && !full) {
             client.joinRoom(r.roomId);
@@ -368,17 +368,17 @@ void drawLobbyBrowser(net::Client& client, LobbyUIState& ui, bool& wantQuit,
         listY += rowH + rowGap;
     }
     if (rooms.empty()) {
-        DrawText("Aucun serveur dispo", colX + 14, panelY + 96, 16, inkDim);
-        listY = panelY + 124;
+        DrawText("Aucune salle", colX + padL, listY + 4, 14, inkDim);
+        listY += 28;
     }
 
     // Create-room field (single line, Enter to confirm).
-    const int optionsY = H - 152;
-    Rectangle minusBox{ (float)colX, (float)optionsY, 34.f, 28.f };
-    Rectangle plusBox{ (float)colX + 116.f, (float)optionsY, 34.f, 28.f };
+    const int optionsY = H - 150;
+    Rectangle minusBox{ (float)colX + padL, (float)optionsY, 32.f, 26.f };
+    Rectangle plusBox{ (float)colX + padL + 108.f, (float)optionsY, 32.f, 26.f };
     const bool hotMinus = CheckCollisionPointRec(m, minusBox);
     const bool hotPlus = CheckCollisionPointRec(m, plusBox);
-    DrawText("Options partie", colX, optionsY - 20, 14, inkDim);
+    DrawText("Joueurs max", colX + padL, optionsY - 18, 12, inkDim);
     DrawRectangle((int)minusBox.x, (int)minusBox.y, (int)minusBox.width, (int)minusBox.height,
                   hotMinus ? rowHi : rowBg);
     DrawRectangle((int)plusBox.x, (int)plusBox.y, (int)plusBox.width, (int)plusBox.height,
@@ -387,17 +387,17 @@ void drawLobbyBrowser(net::Client& client, LobbyUIState& ui, bool& wantQuit,
                        border);
     DrawRectangleLines((int)plusBox.x, (int)plusBox.y, (int)plusBox.width, (int)plusBox.height,
                        border);
-    DrawText("-", (int)minusBox.x + 13, (int)minusBox.y + 4, 22, ink);
-    DrawText("+", (int)plusBox.x + 11, (int)plusBox.y + 5, 20, ink);
+    DrawText("-", (int)minusBox.x + 11, (int)minusBox.y + 3, 22, ink);
+    DrawText("+", (int)plusBox.x + 9, (int)plusBox.y + 4, 20, ink);
     char maxPlayersLabel[64];
-    std::snprintf(maxPlayersLabel, sizeof(maxPlayersLabel), "joueurs max: %d", ui.maxPlayers);
-    DrawText(maxPlayersLabel, colX + 44, optionsY + 7, 14, ink);
-    DrawText("Ctrl: rassembler", colX + 170, optionsY + 7, 14, inkDim);
+    std::snprintf(maxPlayersLabel, sizeof(maxPlayersLabel), "%d", ui.maxPlayers);
+    DrawText(maxPlayersLabel, colX + padL + 40, optionsY + 5, 14, ink);
+    DrawText("Ctrl fusion", colX + padL + 195, optionsY + 6, 12, inkDim);
     if (click && hotMinus) ui.maxPlayers = std::max(1, ui.maxPlayers - 1);
     if (click && hotPlus) ui.maxPlayers = std::min(net::kMaxPlayers, ui.maxPlayers + 1);
 
-    const int inputY = H - 116;
-    Rectangle ipBox{ (float)colX, (float)inputY, (float)colW, 36.f };
+    const int inputY = H - 114;
+    Rectangle ipBox{ (float)colX + padL - 8, (float)inputY, (float)colW - 2 * (padL - 8), 34.f };
     const bool hotInput = CheckCollisionPointRec(m, ipBox);
     DrawRectangle((int)ipBox.x, (int)ipBox.y, (int)ipBox.width, (int)ipBox.height, fieldBg);
     DrawRectangleLines((int)ipBox.x, (int)ipBox.y, (int)ipBox.width, (int)ipBox.height,
@@ -406,14 +406,14 @@ void drawLobbyBrowser(net::Client& client, LobbyUIState& ui, bool& wantQuit,
         DrawRectangle((int)ipBox.x, (int)ipBox.y, 3, (int)ipBox.height, accent);
 
     if (ui.createDraft.empty() && !ui.createFocused) {
-        DrawText("Creer un serveur...",
-                 (int)ipBox.x + 16, (int)ipBox.y + 11, 16, inkDim);
+        DrawText("Nouvelle salle...",
+                 (int)ipBox.x + 14, (int)ipBox.y + 10, 15, inkDim);
     } else {
         DrawText(ui.createDraft.c_str(),
-                 (int)ipBox.x + 16, (int)ipBox.y + 11, 16, ink);
+                 (int)ipBox.x + 14, (int)ipBox.y + 10, 15, ink);
         if (ui.createFocused && ((int)(GetTime() * 2.f) % 2) == 0) {
-            const int cx = (int)ipBox.x + 16 + MeasureText(ui.createDraft.c_str(), 16);
-            DrawRectangle(cx, (int)ipBox.y + 9, 2, 20, ink);
+            const int cx = (int)ipBox.x + 14 + MeasureText(ui.createDraft.c_str(), 15);
+            DrawRectangle(cx, (int)ipBox.y + 8, 2, 18, ink);
         }
     }
 
@@ -440,22 +440,22 @@ void drawLobbyBrowser(net::Client& client, LobbyUIState& ui, bool& wantQuit,
     const auto fb = client.joinFeedback();
     if (fb != net::JoinFeedback::None && fb != net::JoinFeedback::Ok) {
         const char* msg = joinFeedbackText(fb);
-        DrawText(msg, colX, inputY - 28, 14, warn);
+        DrawText(msg, colX + padL, inputY - 26, 13, warn);
     } else if (updateDownloading) {
-        DrawText("Telechargement de la mise a jour...", colX, inputY - 28, 14, accent);
+        DrawText("Telechargement MAJ...", colX + padL, inputY - 26, 13, accent);
     } else if (client.needsClientUpgrade()) {
         char tail[128];
-        std::snprintf(tail, sizeof(tail), "maj dispo  build %u  %s",
+        std::snprintf(tail, sizeof(tail), "MAJ dispo  build %u  %s",
                       (unsigned)client.updateNoticeBuild(),
                       client.updateNoticeUrl().c_str());
-        DrawText(tail, colX, inputY - 28, 14, accent);
+        DrawText(tail, colX + padL, inputY - 26, 12, accent);
     }
 
     // Footer hint.
     const char* hint = ui.createFocused
-        ? "Enter: creer | Esc: retour"
-        : "Click: rejoindre | Esc: retour";
-    DrawText(hint, colX, H - 56, 14, inkDim);
+        ? "Entree : creer   Echap : retour"
+        : "Clic : rejoindre   Echap : menu";
+    DrawText(hint, colX + padL, H - 52, 12, inkDim);
 
     if (IsKeyPressed(KEY_ESCAPE)) {
         if (ui.createFocused) {
@@ -495,8 +495,6 @@ bool runOnlineSession(const std::string& host, uint16_t port, std::string& errOu
     std::string chatDraft;
     LobbyUIState lobbyUi;
     uint8_t localSlimeColor = 0;
-    char serverAddr[80];
-    std::snprintf(serverAddr, sizeof(serverAddr), "%s:%u", host.c_str(), (unsigned)port);
 
     bool quitToMenu = false;
     while (!renderer.shouldClose() && !quitToMenu) {
@@ -521,7 +519,7 @@ bool runOnlineSession(const std::string& host, uint16_t port, std::string& errOu
             BeginDrawing();
             ClearBackground(::Color{ 8, 12, 18, 255 });
             bool wantQuit = false;
-            drawLobbyBrowser(client, lobbyUi, wantQuit, serverAddr,
+            drawLobbyBrowser(client, lobbyUi, wantQuit, host,
                                g_clientAutoUpdateBusy.load());
             if (state == net::ClientState::Joining) {
                 const int W = GetScreenWidth();
@@ -873,8 +871,9 @@ MenuResult runMenu(std::string& joinFailHint) {
             const char* title = "SLIMY JOURNEY";
             const int ts = 24;
             DrawText(title, (kPixW - MeasureText(title, ts)) / 2, 16, ts, ink);
-            char ver[48];
-            std::snprintf(ver, sizeof(ver), "build %u", (unsigned)net::kClientBuild);
+            char ver[32];
+            std::snprintf(ver, sizeof(ver), "build 1.%02u",
+                          (unsigned)net::kClientBuild);
             DrawText(ver, (kPixW - MeasureText(ver, 10)) / 2, 44, 10, inkMuted);
 
             int y = 68;
@@ -961,13 +960,8 @@ MenuResult runMenu(std::string& joinFailHint) {
             }
         }
 
-        char footer[96];
-        if (joinPanel)
-            std::snprintf(footer, sizeof(footer), "port %u · ESC retour · Ctrl+V coller",
-                          (unsigned)net::kDefaultPort);
-        else
-            std::snprintf(footer, sizeof(footer), "UDP %u · ESC quitter",
-                          (unsigned)net::kDefaultPort);
+        const char* footer =
+            joinPanel ? "ESC retour · Ctrl+V coller" : "ESC quitter";
         DrawText(footer, (kPixW - MeasureText(footer, 9)) / 2, kPixH - 16, 9, inkMuted);
 
         EndTextureMode();

@@ -15,6 +15,8 @@ constexpr int kMaxRoomNameBytes = 32;
 constexpr uint16_t kDefaultPort = 6543;
 /// Max simultaneous players per room.
 constexpr int kMaxPlayers = 8;
+/// Hard cap on soft-body fragments per player (Shift-split chains tank CPU + net snapshots).
+constexpr int kMaxSlimeFragmentsPerPlayer = 4;
 /// Max simultaneous rooms hosted by one server hub.
 constexpr int kMaxRooms = 16;
 /// Max simultaneous TCP/ENet peers (lobby + all rooms). 16 * 8 plus headroom.

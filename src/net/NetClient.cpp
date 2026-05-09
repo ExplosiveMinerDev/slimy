@@ -399,10 +399,9 @@ void Client::advanceInterpolation() {
         return;
     }
     const auto now = clock::now();
-    // Slightly shorter blend window than raw EMA → display tracks snapshots a bit faster
-    // (less “rubbery” lag vs solo local physics).
-    float span = std::max(snapIntervalEma_ * 0.88f, 1.f / 120.f);
-    span = std::min(span, 0.12f);
+    // Tighter blend than snapshot spacing → less rubber-banding vs server truth.
+    float span = std::max(snapIntervalEma_ * 0.72f, 1.f / 120.f);
+    span = std::min(span, 0.085f);
     float alpha = std::chrono::duration<float>(now - snapT0_).count() / span;
     alpha = std::clamp(alpha, 0.f, 1.f);
 

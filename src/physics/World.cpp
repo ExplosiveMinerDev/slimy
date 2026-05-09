@@ -13,6 +13,14 @@ namespace {
 
 thread_local std::vector<std::vector<int>> tlsConnComps;
 
+static int countSoftBodiesWithTag(const std::vector<std::unique_ptr<SoftBody>>& bodies,
+                                  int tag) {
+    int n = 0;
+    for (const auto& sb : bodies)
+        if (sb->tag == tag) ++n;
+    return n;
+}
+
 /// Fill `out` with vertex indices per connected component (spring graph). Reuses TLS scratch;
 /// avoids allocating fresh vectors every physics step (idle servers still ran this for each blob).
 void connectedComponentsInto(const SoftBody& sb, std::vector<std::vector<int>>& out) {
@@ -723,6 +731,8 @@ void World::mergeSoftBodiesWithTag(int tag, float pressureTargetHint) {
 }
 
 bool World::splitLargestBlobWithTag(int tag, Vec2 axisDir) {
+    if (countSoftBodiesWithTag(softBodies_, tag) >= pe::net::kMaxSlimeFragmentsPerPlayer)
+        return false;
     int bestIdx = -1;
     int bestCount = 0;
     for (size_t i = 0; i < softBodies_.size(); ++i) {
@@ -771,6 +781,8 @@ bool World::splitLargestBlobWithTag(int tag, Vec2 axisDir) {
 }
 
 bool World::angularBisectLargestBlobWithTag(int tag, Vec2 axisDir) {
+    if (countSoftBodiesWithTag(softBodies_, tag) >= pe::net::kMaxSlimeFragmentsPerPlayer)
+        return false;
     int bestIdx = -1;
     int bestCount = 0;
     for (size_t i = 0; i < softBodies_.size(); ++i) {

@@ -40,8 +40,8 @@ public:
 
     /// Launch velocity magnitudes (world units / s) — applied along the aim direction.
     /// (Tuned at ~80% of the original feel — momentum reduced by 20%.)
-    float jumpForceMin = 6.2f;
-    float jumpForceMax = 18.5f;
+    float jumpForceMin = 7.4f;
+    float jumpForceMax = 21.5f;
     /// Seconds held to reach max charge.
     float chargeMaxTime = 0.6f;
     /// While charging, pressure dips this fraction → visible pre-jump squash.
