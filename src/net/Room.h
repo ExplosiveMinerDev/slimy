@@ -6,8 +6,10 @@
 
 #include <array>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <string>
+#include <utility>
 #include <vector>
 
 struct _ENetHost;
@@ -98,6 +100,10 @@ private:
     clock::time_point nextSnap_{clock::now()};
     /// Reused each broadcast to avoid per-frame heap churn under load.
     std::vector<uint8_t> snapScratch_;
+    /// Per-player slime blobs for snapshot encoding (cleared each broadcast).
+    std::array<std::vector<const SoftBody*>, kMaxPlayers> snapPlayerBlobs_{};
+    /// Byte offsets into `snapScratch_` where `SlimeStatePayload::isLocal` sits; paired with owner slot `i`.
+    std::vector<std::pair<size_t, int>> snapIsLocalPatches_;
 };
 
 } // namespace pe::net

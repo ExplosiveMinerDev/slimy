@@ -91,6 +91,7 @@ set(SERVER_SRC
 add_executable(slimyjourney_server ${SERVER_SRC})
 target_include_directories(slimyjourney_server PRIVATE src ${enet_SOURCE_DIR}/include)
 target_link_libraries(slimyjourney_server PRIVATE enet Threads::Threads)
+target_compile_definitions(slimyjourney_server PRIVATE PE_HEADLESS_SERVER)
 
 if(MSVC)
     target_compile_options(slimyjourney_server PRIVATE /W4 /permissive- /Zc:__cplusplus)

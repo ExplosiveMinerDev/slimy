@@ -591,6 +591,12 @@ void resolvePlayerSlimesMutualRepulsion(std::vector<std::unique_ptr<SoftBody>>& 
             for (size_t j = i + 1; j < n; ++j) {
                 SoftBody& B = *softBodies[j];
                 if (!isNetworkedPlayerSlimeTag(B.tag)) continue;
+#ifdef PE_HEADLESS_SERVER
+                // Dedicated server: fragments of one player share a tag — pairwise soft-soft
+                // resolution scales O(fragments²) per player and dominates CPU after splits.
+                // Cross-player separation still runs (different tags).
+                if (A.tag == B.tag) continue;
+#endif
                 if (!A.aabb().overlaps(B.aabb())) continue;
                 resolveSoftPair(A, B, kPairRest, kPairFric);
                 resolveSoftPair(B, A, kPairRest, kPairFric);
@@ -921,7 +927,11 @@ void World::step(float dt) {
     for (auto& b : bodies_) rigids.push_back(b.get());
 
     // Stiff mass-springs need smaller dt than the rigid solver — sub-step soft integration.
+#ifdef PE_HEADLESS_SERVER
+    const int softSubsteps = 6;
+#else
     const int softSubsteps = 10;
+#endif
     float softH = dt / (float)softSubsteps;
     for (int k = 0; k < softSubsteps; ++k) {
         for (auto& sb : softBodies_) {
@@ -932,7 +942,10 @@ void World::step(float dt) {
             for (int it = 0; it < 8; ++it)
                 sb->resolveCollisions(rigids);
         }
-        resolvePlayerSlimesMutualRepulsion(softBodies_);
+#ifdef PE_HEADLESS_SERVER
+        if (k == softSubsteps - 1)
+#endif
+            resolvePlayerSlimesMutualRepulsion(softBodies_);
         for (auto& sb : softBodies_) {
             sb->postStep();
         }
@@ -942,9 +955,12 @@ void World::step(float dt) {
     }
 
     // Final squeeze: pressure + springs fight player-vs-player separation during substeps.
-    for (int z = 0; z < 2; ++z) {
+#ifdef PE_HEADLESS_SERVER
+    resolvePlayerSlimesMutualRepulsion(softBodies_);
+#else
+    for (int z = 0; z < 2; ++z)
         resolvePlayerSlimesMutualRepulsion(softBodies_);
-    }
+#endif
     // Player slimes only (solo tag 1 + networked tags 101, 201, …): needle clamp.
     // Keep stride in sync with Slime::networkedPlayerBlobTag / Slime::playerTag.
     constexpr int kPlayerTagBase = 1;

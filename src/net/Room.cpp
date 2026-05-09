@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cstddef>
 #include <cstdio>
 #include <cstring>
 #include <vector>
@@ -21,10 +22,16 @@ Room::Room(uint32_t id, std::string name, int maxPlayers, uint8_t optionsFlags)
       maxPlayers_(std::clamp(maxPlayers, 1, kMaxPlayers)),
       optionsFlags_(optionsFlags) {
     world_.gravity = {0.f, 22.f};
+#ifdef PE_HEADLESS_SERVER
+    world_.velocityIterations = 18;
+    world_.positionIterations = 7;
+#endif
     buildScene(world_);
     lastEmptyStamp_ = clock::now();
     nextSnap_ = clock::now();
     snapScratch_.reserve(24576);
+    snapIsLocalPatches_.reserve(256);
+    for (auto& v : snapPlayerBlobs_) v.reserve(16);
 }
 
 int Room::playerCount() const {
@@ -173,10 +180,17 @@ void Room::broadcastSnapshot(_ENetHost* host) {
 
     auto now = clock::now();
     if (now < nextSnap_) return;
-    // ~30 Hz — 60 Hz × large UDP payloads tends to fragment / backlog queues on small VPS links.
+    // Headless dedicated server: slightly lower rate — large snapshots × many peers saturates
+    // low-core VPS and ENet outgoing queues.
+#ifdef PE_HEADLESS_SERVER
+    nextSnap_ = now + std::chrono::milliseconds(45);
+#else
     nextSnap_ = now + std::chrono::milliseconds(33);
+#endif
 
-    std::array<std::vector<const SoftBody*>, kMaxPlayers> playerBlobs;
+    snapIsLocalPatches_.clear();
+    for (auto& v : snapPlayerBlobs_) v.clear();
+
     std::array<size_t, kMaxPlayers> primaryBlob{};
     for (int i = 0; i < kMaxPlayers; ++i) {
         if (!slots_[(size_t)i].active) continue;
@@ -185,8 +199,8 @@ void Room::broadcastSnapshot(_ENetHost* host) {
         size_t bestIdx = 0;
         for (auto& sb : world_.softBodies()) {
             if (sb->tag != wantTag) continue;
-            const size_t idx = playerBlobs[(size_t)i].size();
-            playerBlobs[(size_t)i].push_back(sb.get());
+            const size_t idx = snapPlayerBlobs_[(size_t)i].size();
+            snapPlayerBlobs_[(size_t)i].push_back(sb.get());
             const int n = (int)sb->points.size();
             if (sb->playerControlled || n > bestN) {
                 bestN = n;
@@ -197,29 +211,26 @@ void Room::broadcastSnapshot(_ENetHost* host) {
         primaryBlob[(size_t)i] = bestIdx;
     }
 
-    for (int receiver = 0; receiver < kMaxPlayers; ++receiver) {
-        if (!slots_[(size_t)receiver].active) continue;
+    snapScratch_.clear();
+    std::vector<uint8_t>& buf = snapScratch_;
+    ServerSnapshotMsg snap{};
+    snap.hdr.type = (uint8_t)MsgType::ServerSnapshot;
+    snap.frame = frame_;
+    snap.numSlimes = 0;
+    snap.numDynamicRigids = 0;
 
-        snapScratch_.clear();
-        std::vector<uint8_t>& buf = snapScratch_;
-        ServerSnapshotMsg snap{};
-        snap.hdr.type = (uint8_t)MsgType::ServerSnapshot;
-        snap.frame = frame_;
-        snap.numSlimes = 0;
-        snap.numDynamicRigids = 0;
+    size_t snapOffset = buf.size();
+    buf.resize(buf.size() + sizeof(snap));
 
-        size_t snapOffset = buf.size();
-        buf.resize(buf.size() + sizeof(snap));
+    for (int i = 0; i < kMaxPlayers; ++i) {
+        const auto& blobs = snapPlayerBlobs_[(size_t)i];
+        if (blobs.empty()) continue;
+        const Slot& s = slots_[(size_t)i];
+        const size_t primaryIdx = primaryBlob[(size_t)i];
 
-        for (int i = 0; i < kMaxPlayers; ++i) {
-            const auto& blobs = playerBlobs[(size_t)i];
-            if (blobs.empty()) continue;
-            const Slot& s = slots_[(size_t)i];
-            const size_t primaryIdx = primaryBlob[(size_t)i];
-
-            for (size_t fragIndex = 0;
-                 fragIndex < blobs.size() && fragIndex <= (size_t)kSlimeFragmentIdMask;
-                 ++fragIndex) {
+        for (size_t fragIndex = 0;
+             fragIndex < blobs.size() && fragIndex <= (size_t)kSlimeFragmentIdMask;
+             ++fragIndex) {
             const SoftBody* sb = blobs[fragIndex];
             const bool isPrimary = fragIndex == primaryIdx;
 
@@ -228,18 +239,25 @@ void Room::broadcastSnapshot(_ENetHost* host) {
             Vec2 c = sb->centroid();
             payload.cx = c.x; payload.cy = c.y;
 
-            Vec2 vSum{0,0}; float mSum = 0.f;
-            for (auto& p : sb->points) { vSum += p.vel * p.mass; mSum += p.mass; }
-            Vec2 vel = mSum > 1e-8f ? vSum * (1.f / mSum) : Vec2{0,0};
-            payload.vx = vel.x; payload.vy = vel.y;
+            Vec2 vSum{0, 0};
+            float mSum = 0.f;
+            for (auto& p : sb->points) {
+                vSum += p.vel * p.mass;
+                mSum += p.mass;
+            }
+            Vec2 vel = mSum > 1e-8f ? vSum * (1.f / mSum) : Vec2{0, 0};
+            payload.vx = vel.x;
+            payload.vy = vel.y;
 
             const int n = (int)sb->points.size();
             const int rIdx = std::max(1, n / 8);
             const int lIdx = ((3 * n) / 8) % n;
             Vec2 lTarget = c + (sb->points[(size_t)lIdx].pos - c) * 0.55f;
             Vec2 rTarget = c + (sb->points[(size_t)rIdx].pos - c) * 0.55f;
-            payload.leftEyeX = lTarget.x; payload.leftEyeY = lTarget.y;
-            payload.rightEyeX = rTarget.x; payload.rightEyeY = rTarget.y;
+            payload.leftEyeX = lTarget.x;
+            payload.leftEyeY = lTarget.y;
+            payload.rightEyeX = rTarget.x;
+            payload.rightEyeY = rTarget.y;
 
             payload.aimX = s.aim.x;
             payload.aimY = s.aim.y;
@@ -251,7 +269,7 @@ void Room::broadcastSnapshot(_ENetHost* host) {
                 payload.chargeFrac = 0.f;
                 payload.isCharging = (uint8_t)(s.jumpHeld ? 1 : 0);
             }
-            payload.isLocal = (uint8_t)(i == receiver ? 1 : 0);
+            payload.isLocal = 0;
             payload.numPoints = (uint16_t)n;
             payload.embeddedSpikeCount = 0;
             payload.fragmentInfo = (uint8_t)fragIndex;
@@ -264,6 +282,7 @@ void Room::broadcastSnapshot(_ENetHost* host) {
             size_t off = buf.size();
             buf.resize(off + sizeof(payload));
             std::memcpy(buf.data() + off, &payload, sizeof(payload));
+            snapIsLocalPatches_.emplace_back(off + offsetof(SlimeStatePayload, isLocal), i);
 
             for (auto& p : sb->points) {
                 float xy[2] = {p.pos.x, p.pos.y};
@@ -298,25 +317,29 @@ void Room::broadcastSnapshot(_ENetHost* host) {
                 std::memcpy(buf.data() + tn, &nTrail, sizeof(nTrail));
             }
             ++snap.numSlimes;
-            }
         }
+    }
 
-        for (auto& bptr : world_.bodies()) {
-            const Body& b = *bptr;
-            if (b.type != BodyType::Dynamic) continue;
-            DynamicRigidNetState rs{};
-            rs.bodyId = b.id;
-            rs.x = b.pos.x;
-            rs.y = b.pos.y;
-            rs.rot = b.rot;
-            size_t ro = buf.size();
-            buf.resize(ro + sizeof(rs));
-            std::memcpy(buf.data() + ro, &rs, sizeof(rs));
-            ++snap.numDynamicRigids;
-        }
+    for (auto& bptr : world_.bodies()) {
+        const Body& b = *bptr;
+        if (b.type != BodyType::Dynamic) continue;
+        DynamicRigidNetState rs{};
+        rs.bodyId = b.id;
+        rs.x = b.pos.x;
+        rs.y = b.pos.y;
+        rs.rot = b.rot;
+        size_t ro = buf.size();
+        buf.resize(ro + sizeof(rs));
+        std::memcpy(buf.data() + ro, &rs, sizeof(rs));
+        ++snap.numDynamicRigids;
+    }
 
-        std::memcpy(buf.data() + snapOffset, &snap, sizeof(snap));
+    std::memcpy(buf.data() + snapOffset, &snap, sizeof(snap));
 
+    for (int receiver = 0; receiver < kMaxPlayers; ++receiver) {
+        if (!slots_[(size_t)receiver].active) continue;
+        for (const auto& pr : snapIsLocalPatches_)
+            buf[pr.first] = (uint8_t)(pr.second == receiver ? 1 : 0);
         ENetPacket* pk = enet_packet_create(buf.data(), buf.size(), 0);
         enet_peer_send(slots_[(size_t)receiver].peer, 1, pk);
     }
