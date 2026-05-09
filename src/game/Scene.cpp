@@ -125,8 +125,14 @@ void buildSceneCore(World& world) {
     addStatic(Shape::box(0.55f, 28.f), {-44.f, -2.f}, Slime::stoneTag);
     addStatic(Shape::box(0.55f, 28.f), { 44.f, -2.f}, Slime::stoneTag);
 
-    // === Main ground — flat grass strip ===
+    // === Main ground — flat grass strip (walkable top + dirt body drawn as one solid) ===
     addStatic(Shape::box(40.f, 0.6f), {0.f, 10.5f}, Slime::grassTag);
+    /// Bedrock under dirt/grass: same width, stacked directly below the grass box (see cy/hh math).
+    constexpr float kGrassHalfH = 0.6f;
+    constexpr float kStoneUnderHalfH = 2.8f;
+    const float kGrassBottomY = 10.5f + kGrassHalfH;
+    const float kStoneUnderCy = kGrassBottomY + kStoneUnderHalfH;
+    addStatic(Shape::box(40.f, kStoneUnderHalfH), {0.f, kStoneUnderCy}, Slime::stoneTag);
 
     // === Floating wooden platforms ===
     addStatic(Shape::box(2.6f, 0.30f), {-18.f, 6.6f}, Slime::platformTag);

@@ -595,8 +595,8 @@ void resolvePlayerSlimesMutualRepulsion(std::vector<std::unique_ptr<SoftBody>>& 
     constexpr float kPairFric  = 0.55f;
 
 #ifdef PE_HEADLESS_SERVER
-    // Dedicated server: only resolve **across** player slots. Same-slot fragments share one tag;
-    // doing all-pairs was O(totalFragments²) and melted CPU after splits.
+    // Dedicated server: cross-slot pairs stay cheap (only different players). Same-slot
+    // fragments still need resolveSoftPair so split blobs don't interpenetrate.
     std::array<std::vector<size_t>, pe::net::kMaxPlayers> bySlot{};
     for (size_t idx = 0; idx < n; ++idx) {
         const int t = softBodies[idx]->tag;
@@ -608,21 +608,36 @@ void resolvePlayerSlimesMutualRepulsion(std::vector<std::unique_ptr<SoftBody>>& 
     int activeSlots = 0;
     for (auto& v : bySlot)
         if (!v.empty()) ++activeSlots;
-    if (activeSlots < 2) return;
 
     for (int pass = 0; pass < kPasses; ++pass) {
-        for (int sa = 0; sa < pe::net::kMaxPlayers; ++sa) {
-            if (bySlot[(size_t)sa].empty()) continue;
-            for (int sb = sa + 1; sb < pe::net::kMaxPlayers; ++sb) {
-                if (bySlot[(size_t)sb].empty()) continue;
-                for (size_t ia : bySlot[(size_t)sa]) {
-                    SoftBody& A = *softBodies[ia];
-                    for (size_t ib : bySlot[(size_t)sb]) {
-                        SoftBody& B = *softBodies[ib];
-                        if (!A.aabb().overlaps(B.aabb())) continue;
-                        resolveSoftPair(A, B, kPairRest, kPairFric);
-                        resolveSoftPair(B, A, kPairRest, kPairFric);
+        if (activeSlots >= 2) {
+            for (int sa = 0; sa < pe::net::kMaxPlayers; ++sa) {
+                if (bySlot[(size_t)sa].empty()) continue;
+                for (int sb = sa + 1; sb < pe::net::kMaxPlayers; ++sb) {
+                    if (bySlot[(size_t)sb].empty()) continue;
+                    for (size_t ia : bySlot[(size_t)sa]) {
+                        SoftBody& A = *softBodies[ia];
+                        for (size_t ib : bySlot[(size_t)sb]) {
+                            SoftBody& B = *softBodies[ib];
+                            if (!A.aabb().overlaps(B.aabb())) continue;
+                            resolveSoftPair(A, B, kPairRest, kPairFric);
+                            resolveSoftPair(B, A, kPairRest, kPairFric);
+                        }
                     }
+                }
+            }
+        }
+        for (int sa = 0; sa < pe::net::kMaxPlayers; ++sa) {
+            const std::vector<size_t>& slotIdx = bySlot[(size_t)sa];
+            const size_t m = slotIdx.size();
+            if (m < 2) continue;
+            for (size_t a = 0; a < m; ++a) {
+                SoftBody& A = *softBodies[slotIdx[a]];
+                for (size_t b = a + 1; b < m; ++b) {
+                    SoftBody& B = *softBodies[slotIdx[b]];
+                    if (!A.aabb().overlaps(B.aabb())) continue;
+                    resolveSoftPair(A, B, kPairRest, kPairFric);
+                    resolveSoftPair(B, A, kPairRest, kPairFric);
                 }
             }
         }
